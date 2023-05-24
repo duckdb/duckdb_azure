@@ -1,0 +1,18 @@
+# name: test/sql/azure.test
+# description: test azure extension
+# group: [azure]
+
+# Before we load the extension, this will fail
+statement error
+SELECT azure('Sam');
+----
+Catalog Error: Scalar Function with name azure does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require azure
+
+# Confirm the extension works
+query I
+SELECT azure('Sam');
+----
+Azure Sam 🐥
