@@ -9,7 +9,7 @@ defaults:
 
 jobs:
   macos:
-    name: MacOS Release (${{ matrix.vcpkg_triplet }})
+    name: MacOS Release (${{ matrix.osx_build_arch }})
     runs-on: macos-latest
     strategy:
       matrix:
