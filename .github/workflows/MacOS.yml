@@ -49,7 +49,7 @@ jobs:
       - name: Build extension
         shell: bash
         env:
-          VCPKG_TOOLCHAIN_PATH: '../vcpkg'
+          VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
         run: |
           make release
           make test
