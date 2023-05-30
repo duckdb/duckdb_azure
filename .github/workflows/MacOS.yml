@@ -15,15 +15,23 @@ jobs:
       matrix:
         # Add commits/tags to build against other DuckDB versions
         duckdb_version: [ '<submodule_version>' ]
+        vcpkg_version: [ '2023.04.15' ]
+        vcpkg_triplet: [ 'x64-osx', 'arm64-osx' ]
+      include:
+        - vcpkg_triplet: 'x64-osx'
+          osx_build_arch: 'x86_64'
+        - vcpkg_triplet: 'arm64-osx'
+          osx_build_arch: 'arm64'
 
     env:
-      VCPKG_DEFAULT_TRIPLET: x64-osx'
-      OSX_BUILD_UNIVERSAL: 0 # TODO re-enable
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}
+      OSX_BUILD_ARCH: ${{ matrix.osx_build_arch }}
       GEN: ninja
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg/bincache
       # Let's use GitHub Action cache as storage for the vcpkg Binary Caching feature.
       VCPKG_BINARY_SOURCES: 'clear;x-gha,readwrite'
+      VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
 
     steps:
       - uses: actions/checkout@v3
@@ -51,7 +59,7 @@ jobs:
       - name: setup vcpkg
         run: |
           git clone https://github.com/Microsoft/vcpkg.git
-          ./vcpkg/bootstrap-vcpkg.sh
+          cd vcpkg && gco ${{ matrix.vcpkg_version }} && ./bootstrap-vcpkg.sh
 
       - uses: actions/setup-python@v2
         with:
@@ -83,39 +91,22 @@ jobs:
             !${{ env.VCPKG_ROOT }}/installed
           # The key is composed in a way that it gets properly invalidated whenever a different version of vcpkg is being used.
           key: |
-            ${{ hashFiles( '.git/modules/vcpkg/HEAD' )}}
+            ${{ hashFiles( matrix.vcpkg_version )}}
 
          # Build extension
       - name: Build extension
         shell: bash
-        env:
-          VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
         run: |
           make release
-          make test
 
-      - name: Deploy
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_DEPLOY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_DEPLOY_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.S3_REGION }}
-          BUCKET_NAME: ${{ secrets.S3_BUCKET }}
+      - uses: actions/upload-artifact@v2
+        with:
+          name: aws-extension-osx-universal
+          path: |
+            build/release/extension/azure/azure.duckdb_extension
+
+      # Build extension
+      - name: Test Extension
+        shell: bash
         run: |
-          cd duckdb
-          git fetch --tags
-          export DUCKDB_VERSION=`git tag --points-at HEAD`
-          echo $DUCKDB_VERSION
-          export DUCKDB_VERSION=${DUCKDB_VERSION:=`git log -1 --format=%h`}
-          echo $DUCKDB_VERSION
-          cd ..
-          if [[ "$AWS_ACCESS_KEY_ID" == "" ]] ; then
-            echo 'No key set, skipping'
-          elif [[ "$GITHUB_REF" =~ ^(refs/tags/v.+)$ ]] ; then
-            python -m pip install awscli
-            ./scripts/extension-upload.sh azure ${{ github.ref_name }} $DUCKDB_VERSION osx_amd64 $BUCKET_NAME true
-            ./scripts/extension-upload.sh azure ${{ github.ref_name }} $DUCKDB_VERSION osx_arm64 $BUCKET_NAME true
-          elif [[ "$GITHUB_REF" =~ ^(refs/heads/main)$ ]] ; then
-            python -m pip install awscli
-            ./scripts/extension-upload.sh azure `git log -1 --format=%h` $DUCKDB_VERSION osx_amd64 $BUCKET_NAME false
-            ./scripts/extension-upload.sh azure `git log -1 --format=%h` $DUCKDB_VERSION osx_arm64 $BUCKET_NAME false
-          fi
+          make test
