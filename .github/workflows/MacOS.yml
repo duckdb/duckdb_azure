@@ -17,11 +17,11 @@ jobs:
         duckdb_version: [ '<submodule_version>' ]
         vcpkg_version: [ '2023.04.15' ]
         vcpkg_triplet: [ 'x64-osx', 'arm64-osx' ]
-      include:
-        - vcpkg_triplet: 'x64-osx'
-          osx_build_arch: 'x86_64'
-        - vcpkg_triplet: 'arm64-osx'
-          osx_build_arch: 'arm64'
+        include:
+          - vcpkg_triplet: 'x64-osx'
+            osx_build_arch: 'x86_64'
+          - vcpkg_triplet: 'arm64-osx'
+            osx_build_arch: 'arm64'
 
     env:
       VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}
