@@ -16,7 +16,6 @@ jobs:
         # Add commits/tags to build against other DuckDB versions
         duckdb_version: [ '<submodule_version>' ]
         vcpkg_version: [ '2023.04.15' ]
-        vcpkg_triplet: [ 'x64-osx', 'arm64-osx' ]
         include:
           - vcpkg_triplet: 'x64-osx'
             osx_build_arch: 'x86_64'
@@ -59,7 +58,7 @@ jobs:
       - name: setup vcpkg
         run: |
           git clone https://github.com/Microsoft/vcpkg.git
-          cd vcpkg && gco ${{ matrix.vcpkg_version }} && ./bootstrap-vcpkg.sh
+          cd vcpkg && git checkout ${{ matrix.vcpkg_version }} && ./bootstrap-vcpkg.sh
 
       - uses: actions/setup-python@v2
         with:
@@ -93,7 +92,7 @@ jobs:
           key: |
             ${{ hashFiles( matrix.vcpkg_version )}}
 
-         # Build extension
+       # Build extension
       - name: Build extension
         shell: bash
         run: |
