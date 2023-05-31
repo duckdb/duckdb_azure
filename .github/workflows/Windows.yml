@@ -20,11 +20,11 @@ jobs:
     env:
       VCPKG_TARGET_TRIPLET: ${{ matrix.vcpkg_triplet }}
       GEN: Ninja
-      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg/bincache
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg\bincache
       # Let's use GitHub Action cache as storage for the vcpkg Binary Caching feature.
       VCPKG_BINARY_SOURCES: 'clear;x-gha,readwrite'
-      VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+      VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake
 
     steps:
       - uses: actions/checkout@v3
