@@ -91,7 +91,7 @@ jobs:
             !${{ env.VCPKG_ROOT }}/installed
           # The key is composed in a way that it gets properly invalidated whenever a different version of vcpkg is being used.
           key: |
-            ${{ hashFiles( matrix.vcpkg_version )}}
+            ${{ matrix.vcpkg_version }}
 
        # Build extension
       - name: Build extension
