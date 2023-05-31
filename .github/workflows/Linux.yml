@@ -86,11 +86,11 @@ jobs:
       with:
         aarch64_cross_compile: ${{ matrix.arch == 'linux_arm64' && 1 }}
 
-    - name: Setup Ccache
-      uses: hendrikmuhs/ccache-action@main
-      with:
-        key: ${{ github.job }}-${{ matrix.duckdb_version }}
-        save: ${{ github.ref == 'refs/heads/master' || github.repository != 'duckdb/duckdb' }}
+#    - name: Setup Ccache
+#      uses: hendrikmuhs/ccache-action@main
+#      with:
+#        key: ${{ github.job }}-${{ matrix.duckdb_version }}
+#        save: ${{ github.ref == 'refs/heads/master' || github.repository != 'duckdb/duckdb' }}
 
     - name: setup vcpkg
       run: |
