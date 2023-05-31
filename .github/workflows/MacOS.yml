@@ -20,8 +20,10 @@ jobs:
         include:
           - vcpkg_triplet: 'x64-osx'
             osx_build_arch: 'x86_64'
+            duckdb_arch: 'osx_amd64'
           - vcpkg_triplet: 'arm64-osx'
             osx_build_arch: 'arm64'
+            duckdb_arch: 'osx_arm64'
 
     env:
       VCPKG_TARGET_TRIPLET: ${{ matrix.vcpkg_triplet }}
@@ -100,7 +102,7 @@ jobs:
 
       - uses: actions/upload-artifact@v2
         with:
-          name: azure-extension-osx-${{ matrix.osx_build_arch }}
+          name: osx-${{ matrix.osx_build_arch }}-extension
           path: |
             build/release/extension/azure/azure.duckdb_extension
 
@@ -110,3 +112,26 @@ jobs:
         shell: bash
         run: |
           make test
+
+      - name: Deploy
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_DEPLOY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_DEPLOY_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.S3_REGION }}
+          BUCKET_NAME: ${{ secrets.S3_BUCKET }}
+        run: |
+          git config --global --add safe.directory '*'
+          cd duckdb
+          git fetch --tags
+          export DUCKDB_VERSION=`git tag --points-at HEAD`
+          export DUCKDB_VERSION=${DUCKDB_VERSION:=`git log -1 --format=%h`}
+          cd ..
+          if [[ "$AWS_ACCESS_KEY_ID" == "" ]] ; then
+            echo 'No key set, skipping'
+          elif [[ "$GITHUB_REF" =~ ^(refs/tags/v.+)$ ]] ; then
+            python3 -m pip install pip awscli
+            ./scripts/extension-upload.sh azure ${{ github.ref_name }} $DUCKDB_VERSION ${{matrix.duckdb_arch}} $BUCKET_NAME true
+          elif [[ "$GITHUB_REF" =~ ^(refs/heads/main)$ ]] ; then
+            python3 -m pip install pip awscli
+            ./scripts/extension-upload.sh azure `git log -1 --format=%h` $DUCKDB_VERSION ${{matrix.duckdb_arch}} $BUCKET_NAME false
+          fi
