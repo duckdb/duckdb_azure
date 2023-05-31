@@ -51,7 +51,7 @@ jobs:
     - name: Install additional centos dependencies
       if: ${{ matrix.arch == 'linux_amd64_gcc4' }}
       run: |
-        yum install curl zip unzip tar
+        yum install -y curl zip unzip tar
 
     - name: Install Git 2.18.5
       if: ${{ matrix.arch == 'linux_amd64' || matrix.arch == 'linux_arm64' }}
