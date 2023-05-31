@@ -31,9 +31,7 @@ SELECT count(*) FROM 'azure://testing-private/lineitem.csv';
 ----
 60175
 
-# Read from a csv file with header
-# TODO: why this fails?
-#query I
-#SELECT count(*) FROM 'azure://testing-private/l.csv';
-#----
-#60175
+query I
+SELECT count(*) FROM 'azure://testing-private/l.csv';
+----
+60175

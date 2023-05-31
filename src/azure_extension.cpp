@@ -56,7 +56,8 @@ unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, uint
 }
 
 AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, uint8_t flags, AzureAuthentication auth, AzureParsedUrl parsed_url)
-    : FileHandle(fs, std::move(path_p)), flags(flags), length(0), file_offset(0), blob_client(auth, parsed_url.path) {
+    : FileHandle(fs, std::move(path_p)), flags(flags), length(0), buffer_available(0), buffer_idx(0), file_offset(0),
+      buffer_start(0), buffer_end(0), blob_client(std::move(auth), parsed_url.path) {
 	try {
 		auto client = *blob_client.GetClient();
 		auto res = client.GetProperties();
@@ -80,7 +81,7 @@ time_t AzureStorageFileSystem::GetLastModifiedTime(FileHandle &handle) {
     return afh.last_modified;
 }
 
-// TODO: this is currently a bit weird
+// TODO: this is currently a bit weird: it should be az:// but that shit dont work
 bool AzureStorageFileSystem::CanHandleFile(const string &fpath) {
     return fpath.rfind("azure://", 0) == 0;
 }
@@ -155,7 +156,7 @@ void AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_b
 
 			// Bypass buffer if we read more than buffer size
 			if (to_read > new_buffer_available) {
-				ReadRange(hfh, location, (char *)buffer + buffer_offset, to_read);
+				ReadRange(hfh, location + buffer_offset, (char *)buffer + buffer_offset, to_read);
 				hfh.buffer_available = 0;
 				hfh.buffer_idx = 0;
 				hfh.file_offset += to_read;
