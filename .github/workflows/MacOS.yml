@@ -26,7 +26,7 @@ jobs:
     env:
       VCPKG_TARGET_TRIPLET: ${{ matrix.vcpkg_triplet }}
       OSX_BUILD_ARCH: ${{ matrix.osx_build_arch }}
-      GEN: ninja
+      GEN: Ninja
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg/bincache
       # Let's use GitHub Action cache as storage for the vcpkg Binary Caching feature.

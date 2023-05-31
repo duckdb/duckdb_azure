@@ -22,7 +22,7 @@ ifneq ("${VCPKG_TARGET_TRIPLET}", "")
 endif
 
 ifeq ($(GEN),ninja)
-	GENERATOR=-G "ninja"
+	GENERATOR=-G "Ninja"
 	FORCE_COLOR=-DFORCE_COLORED_OUTPUT=1
 endif
 
