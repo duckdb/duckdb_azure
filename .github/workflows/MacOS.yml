@@ -24,7 +24,7 @@ jobs:
             osx_build_arch: 'arm64'
 
     env:
-      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}
+      VCPKG_TARGET_TRIPLET: ${{ matrix.vcpkg_triplet }}
       OSX_BUILD_ARCH: ${{ matrix.osx_build_arch }}
       GEN: ninja
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
