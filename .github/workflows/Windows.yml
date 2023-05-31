@@ -49,6 +49,11 @@ jobs:
           cd duckdb
           git checkout ${{ matrix.duckdb_version }}
 
+      - name: setup vcpkg
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git
+          cd vcpkg && git checkout ${{ matrix.vcpkg_version }} && ./bootstrap-vcpkg.sh 
+
       - name: "Create directory '${{ env.VCPKG_DEFAULT_BINARY_CACHE }}'"
         run: mkdir -p $VCPKG_DEFAULT_BINARY_CACHE
         shell: bash
