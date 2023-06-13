@@ -71,9 +71,7 @@ public:
 	                                        FileCompressionType compression = DEFAULT_COMPRESSION,
 	                                        FileOpener *opener = nullptr) final;
 
-	vector<string> Glob(const string &path, FileOpener *opener = nullptr) override {
-		return {path}; // FIXME
-	}
+	vector<string> Glob(const string &path, FileOpener *opener = nullptr) override;
 
 	// FS methods
 	void Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) override;

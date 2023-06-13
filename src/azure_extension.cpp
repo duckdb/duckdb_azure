@@ -6,6 +6,7 @@
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/common/file_opener.hpp"
+#include "duckdb/function/scalar/string_functions.hpp"
 
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
@@ -36,7 +37,7 @@ unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const st
 		connection_string = value.ToString();
 	}
 
-	if (connection_string == "") {
+	if (connection_string.empty()) {
 		throw IOException("No azure_storage_connection_string found, please set using SET azure_storage_connection_string='<your connection string>' ");
 	}
 
@@ -109,6 +110,81 @@ int64_t AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t n
     nr_bytes = MinValue<idx_t>(max_read, nr_bytes);
     Read(handle, buffer, nr_bytes, hfh.file_offset);
     return nr_bytes;
+}
+
+// taken from s3fs.cpp TODO: deduplicate!
+static bool Match(vector<string>::const_iterator key, vector<string>::const_iterator key_end,
+                  vector<string>::const_iterator pattern, vector<string>::const_iterator pattern_end) {
+
+	while (key != key_end && pattern != pattern_end) {
+		if (*pattern == "**") {
+			if (std::next(pattern) == pattern_end) {
+				return true;
+			}
+			while (key != key_end) {
+				if (Match(key, key_end, std::next(pattern), pattern_end)) {
+					return true;
+				}
+				key++;
+			}
+			return false;
+		}
+		if (!LikeFun::Glob(key->data(), key->length(), pattern->data(), pattern->length())) {
+			return false;
+		}
+		key++;
+		pattern++;
+	}
+	return key == key_end && pattern == pattern_end;
+}
+
+vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *opener) {
+	if (opener == nullptr) {
+		throw InternalException("Cannot do Azure storage Glob without FileOpener");
+	}
+	auto parsed_azure_url = AzureStorageFileSystem::ParseUrl(path);
+
+	// Azure matches on prefix, not glob pattern, so we take a substring until the first wildcard
+	auto first_wildcard_pos = parsed_azure_url.path.find_first_of("*[\\");
+	if (first_wildcard_pos == string::npos) {
+		return {path};
+	}
+
+	string shared_path = parsed_azure_url.path.substr(0, first_wildcard_pos);
+	Value value;
+	string connection_string;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_storage_connection_string", value)) {
+		connection_string = value.ToString();
+	}
+	auto container_client = Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(connection_string, parsed_azure_url.container);
+	container_client.CreateIfNotExists();
+
+	vector<Azure::Storage::Blobs::Models::BlobItem> found_keys;
+	Azure::Storage::Blobs::ListBlobsOptions options;
+	options.Prefix = shared_path;
+	while(true) {
+		auto res = container_client.ListBlobs(options);
+		found_keys.insert(found_keys.end(), res.Blobs.begin(), res.Blobs.end());
+		if (res.NextPageToken) {
+			options.ContinuationToken = res.NextPageToken;
+		} else {
+			break;
+		}
+	}
+
+	vector<string> pattern_splits = StringUtil::Split(parsed_azure_url.path, "/");
+	vector<string> result;
+	for (const auto &key : found_keys) {
+		vector<string> key_splits = StringUtil::Split(key.Name, "/");
+		bool is_match = Match(key_splits.begin(), key_splits.end(), pattern_splits.begin(), pattern_splits.end());
+
+		if (is_match) {
+			auto result_full_url = "azure://" + parsed_azure_url.container + "/" + key.Name;
+			result.push_back(result_full_url);
+		}
+	}
+
+	return result;
 }
 
 // TODO: this code is identical to HTTPFS, look into unifying it

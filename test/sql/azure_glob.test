@@ -1,0 +1,36 @@
+# name: test/sql/azure_glob.test
+# description: test azure globbing
+# group: [azure]
+
+# Require statement will ensure this test is run with this extension loaded
+require azure
+
+require parquet
+
+require-env AZURE_STORAGE_CONNECTION_STRING
+
+statement ok
+SET azure_storage_connection_string = '${AZURE_STORAGE_CONNECTION_STRING}';
+
+query I
+SELECT * from GLOB("azure://testing-private/*.*") order by file;
+----
+azure://testing-private/l.csv
+azure://testing-private/l.parquet
+azure://testing-private/lineitem.csv
+
+query I
+SELECT * from GLOB("azure://testing-private/*.csv") order by file;
+----
+azure://testing-private/l.csv
+azure://testing-private/lineitem.csv
+
+query I
+SELECT * from GLOB("azure://testing-private/*.parquet") order by file;
+----
+azure://testing-private/l.parquet
+
+query I
+SELECT * from GLOB("azure://testing-private/lineitem.*") order by file;
+----
+azure://testing-private/lineitem.csv
