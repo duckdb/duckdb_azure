@@ -43,7 +43,7 @@ jobs:
           submodules: 'true'
 
       - name: Install Ninja
-        run: brew install ninja
+        run: brew install ninja docker
 
       # Set env vars needed for vcpkg to leverage the GitHub Action cache as a storage
       # for Binary Caching.
