@@ -99,7 +99,7 @@ public:
 
 protected:
 	static AzureParsedUrl ParseUrl(const string& url);
-	void ReadRange(FileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len);
+	static void ReadRange(FileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len);
 	virtual duckdb::unique_ptr<AzureStorageFileHandle> CreateHandle(const string &path, uint8_t flags,
 	                                                                FileLockType lock, FileCompressionType compression,
 	                                                                FileOpener *opener);
