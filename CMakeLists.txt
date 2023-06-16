@@ -19,8 +19,13 @@ build_loadable_extension(${TARGET_NAME} ${PARAMETERS} ${EXTENSION_SOURCES})
 find_package(azure-identity-cpp CONFIG REQUIRED)
 find_package(azure-storage-blobs-cpp CONFIG REQUIRED)
 
-target_link_libraries(${EXTENSION_NAME} Azure::azure-identity
-                      Azure::azure-storage-blobs)
+# Static lib
+target_link_libraries(${EXTENSION_NAME} Azure::azure-identity Azure::azure-storage-blobs)
+target_include_directories(${EXTENSION_NAME} PRIVATE Azure::azure-identity Azure::azure-storage-blobs)
+
+# Loadable binary
+target_link_libraries(${TARGET_NAME}_loadable_extension Azure::azure-identity Azure::azure-storage-blobs)
+target_include_directories(${TARGET_NAME}_loadable_extension PRIVATE Azure::azure-identity Azure::azure-storage-blobs)
 
 install(
   TARGETS ${EXTENSION_NAME}
