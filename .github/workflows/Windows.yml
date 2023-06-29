@@ -87,7 +87,7 @@ jobs:
           npm install -g azurite
           azurite &
           sleep 10
-          ./scripts/scripts/upload_test_files_to_azurite.sh
+          ./scripts/upload_test_files_to_azurite.sh
 
       - name: Test Extension
         shell: bash
