@@ -30,7 +30,6 @@ jobs:
       OSX_BUILD_ARCH: ${{ matrix.osx_build_arch }}
       GEN: Ninja
       VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-      AZURE_STORAGE_CONNECTION_STRING: 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;'
 
     steps:
       - uses: actions/checkout@v3
@@ -39,7 +38,7 @@ jobs:
           submodules: 'true'
 
       - name: Install Ninja
-        run: brew install ninja docker
+        run: brew install ninja
 
       - name: Setup Ccache
         uses: hendrikmuhs/ccache-action@main
@@ -61,12 +60,7 @@ jobs:
         run: |
           make release
 
-      - name: Launch & populate Azure test service
-        run: |
-          docker run -p 10000:10000 -p 10001:10001 -p 10002:10002 mcr.microsoft.com/azure-storage/azurite
-          sleep 10
-          ./scripts/upload_test_files_to_azurite.sh
-
+      # NOTE: is ran without test server here for now, docker on GH actions seems a bit fragile
       - name: Test Extension
         if: ${{ matrix.osx_build_arch == 'x86_64'}}
         shell: bash
