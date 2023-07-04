@@ -57,38 +57,26 @@ jobs:
         fetch-depth: 0
         submodules: 'true'
 
-    # Set env vars needed for vcpkg to leverage the GitHub Action cache as a storage
-    # for Binary Caching.
-    - uses: actions/github-script@v6
-      with:
-        script: |
-          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
     - name: Checkout DuckDB to version
       if: ${{ matrix.duckdb_version != '<submodule_version>'}}
       run: |
         cd duckdb
         git checkout ${{ matrix.duckdb_version }}
-        
-    - uses: ./duckdb/.github/actions/manylinux_2014_setup
-      if: ${{ matrix.arch == 'linux_amd64' }}
-      with:
-        aws-cli: 1
-        ninja-build: 1
-        ccache: 1
-        ssh: 1
-        python_alias: 1
-
-    - if: ${{ matrix.arch == 'linux_arm64' }}
-      uses: ./duckdb/.github/actions/ubuntu_16_setup
-      with:
-        aarch64_cross_compile: 1
 
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v11
       with:
         vcpkgGitCommitId: 501db0f17ef6df184fcdbfbe0f87cde2313b6ab1
+        
+    - name: Setup ManyLinux2014
+      if: ${{ matrix.arch == 'linux_amd64' }}
+      run: |
+        ./duckdb/scripts/scripts/setup_manylinux2014.sh general aws-cli ninja-build ccache ssh openssl python_alias
+
+    - if: ${{ matrix.arch == 'linux_arm64' }}
+      uses: ./duckdb/.github/actions/ubuntu_16_setup
+      with:
+        aarch64_cross_compile: 1
 
     # Build extension
     - name: Build extension
@@ -106,7 +94,7 @@ jobs:
         sleep 10
         ./scripts/upload_test_files_to_azurite.sh
 
-    - name: Build extension
+    - name: Test extension
       if: ${{ matrix.arch != 'linux_arm64'}}
       run: |
         make test
