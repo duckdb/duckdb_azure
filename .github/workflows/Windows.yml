@@ -51,11 +51,10 @@ jobs:
           make release
 
       - uses: actions/setup-node@v3
-
       - name: Launch & populate Azure test service
         run: |
           npm install -g azurite
-          azurite &
+          azurite > azurite_log.txt 2>&1 &
           sleep 10
           ./scripts/upload_test_files_to_azurite.sh
 
@@ -92,3 +91,9 @@ jobs:
             python -m pip install awscli
             ./scripts/extension-upload.sh azure `git log -1 --format=%h` $DUCKDB_VERSION windows_amd64 $BUCKET_NAME false 
           fi
+
+      - name: Azure test server log
+        if: always()
+        shell: bash
+        run: |
+          cat azurite_log.txt

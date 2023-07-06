@@ -30,6 +30,7 @@ jobs:
       OSX_BUILD_ARCH: ${{ matrix.osx_build_arch }}
       GEN: Ninja
       VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+      AZURE_STORAGE_CONNECTION_STRING: 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;'
 
     steps:
       - uses: actions/checkout@v3
@@ -60,7 +61,14 @@ jobs:
         run: |
           make release
 
-      # NOTE: is ran without test server here for now, docker on GH actions seems a bit fragile
+      - uses: actions/setup-node@v3
+      - name: Launch & populate Azure test service
+        run: |
+          npm install -g azurite
+          azurite > azurite_log.txt 2>&1 &
+          sleep 10
+          ./scripts/upload_test_files_to_azurite.sh
+
       - name: Test Extension
         if: ${{ matrix.osx_build_arch == 'x86_64'}}
         shell: bash
@@ -96,3 +104,9 @@ jobs:
             python3 -m pip install pip awscli
             ./scripts/extension-upload.sh azure `git log -1 --format=%h` $DUCKDB_VERSION ${{matrix.duckdb_arch}} $BUCKET_NAME false
           fi
+
+      - name: Azure test server log
+        if: always()
+        shell: bash
+        run: |
+          cat azurite_log.txt

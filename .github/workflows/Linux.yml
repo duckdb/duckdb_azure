@@ -43,7 +43,7 @@ jobs:
         add-apt-repository ppa:git-core/ppa
         apt-get update -y -qq
         apt-get install -y -qq ninja-build make gcc-multilib g++-multilib libssl-dev wget openjdk-8-jdk zip maven unixodbc-dev libc6-dev-i386 lib32readline6-dev libssl-dev libcurl4-gnutls-dev libexpat1-dev gettext unzip build-essential checkinstall libffi-dev curl libz-dev openssh-client
-        apt-get install -y -qq tar pkg-config docker
+        apt-get install -y -qq tar pkg-config
 
     - name: Install Git 2.18.5
       if: ${{ matrix.arch == 'linux_amd64' || matrix.arch == 'linux_arm64' }}
@@ -59,6 +59,14 @@ jobs:
       with:
         fetch-depth: 0
         submodules: 'true'
+
+    - uses: actions/setup-node@v3
+    - name: Launch & populate Azure test service
+      run: |
+        npm install -g azurite
+        azurite > azurite_log.txt 2>&1 &
+        sleep 10
+        ./scripts/upload_test_files_to_azurite.sh
 
     - name: Checkout DuckDB to version
       if: ${{ matrix.duckdb_version != '<submodule_version>'}}
@@ -91,12 +99,6 @@ jobs:
         CXX: ${{ matrix.arch == 'linux_arm64' && 'aarch64-linux-gnu-g++' || '' }}
       run: |
         make release
-
-    - name: Launch & populate Azure test service
-      run: |
-        docker run -p 10000:10000 -p 10001:10001 -p 10002:10002 mcr.microsoft.com/azure-storage/azurite
-        sleep 10
-        ./scripts/upload_test_files_to_azurite.sh
 
     - name: Test extension
       if: ${{ matrix.arch != 'linux_arm64'}}
@@ -132,3 +134,9 @@ jobs:
           python3 -m pip install pip awscli
           ./scripts/extension-upload.sh azure `git log -1 --format=%h` $DUCKDB_VERSION ${{matrix.arch}} $BUCKET_NAME false
         fi
+
+    - name: Azure test server log
+      if: always()
+      shell: bash
+      run: |
+        cat azurite_log.txt
