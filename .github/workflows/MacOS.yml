@@ -63,6 +63,7 @@ jobs:
 
       - uses: actions/setup-node@v3
       - name: Launch & populate Azure test service
+        if: ${{ matrix.osx_build_arch == 'x86_64'}}
         run: |
           npm install -g azurite
           azurite > azurite_log.txt 2>&1 &
@@ -106,7 +107,7 @@ jobs:
           fi
 
       - name: Azure test server log
-        if: always()
+        if: always() && matrix.osx_build_arch == 'x86_64'
         shell: bash
         run: |
           cat azurite_log.txt
