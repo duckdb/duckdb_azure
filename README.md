@@ -1,6 +1,9 @@
 Warning: this extension is currently in an experimental state. Feel free to try it out, but be aware
 that only minimal testing was done and no benchmarking.
 
+Warning 2: This extension currently builds with a feature branch of DuckDB. A PR is being worked on. When the PR is merged,
+this extension will be included in (nightly) DuckDB releases.
+
 # DuckDB Azure Extension
 This extension adds a filesystem abstraction for Azure blob storage to DuckDB.
 
