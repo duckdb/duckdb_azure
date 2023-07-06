@@ -61,7 +61,10 @@ jobs:
         submodules: 'true'
 
     - uses: actions/setup-node@v3
+      if: ${{ matrix.arch == 'linux_amd64' }}
+
     - name: Launch & populate Azure test service
+      if: ${{ matrix.arch == 'linux_amd64' }}
       run: |
         npm install -g azurite
         azurite > azurite_log.txt 2>&1 &
@@ -100,8 +103,9 @@ jobs:
       run: |
         make release
 
+    # run test only on amd64 for now
     - name: Test extension
-      if: ${{ matrix.arch != 'linux_arm64'}}
+      if: ${{ matrix.arch == 'linux_amd64'}}
       run: |
         make test
 
@@ -136,7 +140,7 @@ jobs:
         fi
 
     - name: Azure test server log
-      if: always()
+      if: always() && matrix.arch == 'linux_amd64'
       shell: bash
       run: |
         cat azurite_log.txt
