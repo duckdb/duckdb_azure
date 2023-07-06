@@ -72,7 +72,7 @@ jobs:
       if: ${{ matrix.arch == 'linux_amd64' }}
       run: |
         npm install -g azurite
-        curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+        curl -sL https://aka.ms/InstallAzureCLIDeb | bash
         azurite > azurite_log.txt 2>&1 &
         sleep 10
         ./scripts/upload_test_files_to_azurite.sh
