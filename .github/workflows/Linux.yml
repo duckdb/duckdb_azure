@@ -61,6 +61,11 @@ jobs:
         submodules: 'true'
 
     - name: install npm
+      if: ${{ matrix.arch == 'linux_amd64_gcc4' }}
+      run: |
+        yum install -y nodejs npm
+
+    - name: install npm
       if: ${{ matrix.arch == 'linux_amd64' }}
       run: |
         curl -fsSL https://deb.nodesource.com/setup_16.x | bash
@@ -69,7 +74,7 @@ jobs:
         npm -v
 
     - name: Launch & populate Azure test service
-      if: ${{ matrix.arch == 'linux_amd64' }}
+      if: ${{ matrix.arch == 'linux_amd64' || matrix.arch == 'linux_amd64_gcc4' }}
       run: |
         npm install -g azurite
         curl -sL https://aka.ms/InstallAzureCLIDeb | bash
@@ -110,10 +115,10 @@ jobs:
         make release
 
     # Some issues with azurite on linux remain for some reason
-#    - name: Test extension
-#      if: ${{ matrix.arch == 'linux_amd64'}}
-#      run: |
-#        make test
+    - name: Test extension
+      if: ${{ matrix.arch == 'linux_amd64_gcc4'}}
+      run: |
+        make test
 
     - uses: actions/upload-artifact@v2
       with:
@@ -145,8 +150,8 @@ jobs:
           ./scripts/extension-upload.sh azure `git log -1 --format=%h` $DUCKDB_VERSION ${{matrix.arch}} $BUCKET_NAME false
         fi
 
-#    - name: Azure test server log
-#      if: always() && matrix.arch == 'linux_amd64'
-#      shell: bash
-#      run: |
-#        cat azurite_log.txt
+    - name: Azure test server log
+      if: always() && matrix.arch == 'linux_amd64_gcc4'
+      shell: bash
+      run: |
+        cat azurite_log.txt
