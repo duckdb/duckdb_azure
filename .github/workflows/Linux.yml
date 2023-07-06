@@ -60,8 +60,13 @@ jobs:
         fetch-depth: 0
         submodules: 'true'
 
-    - uses: actions/setup-node@v3
+    - name: install npm
       if: ${{ matrix.arch == 'linux_amd64' }}
+      run: |
+        curl -fsSL https://deb.nodesource.com/setup_16.x | bash
+        apt-get install -y -qq nodejs
+        node -v 
+        npm -v
 
     - name: Launch & populate Azure test service
       if: ${{ matrix.arch == 'linux_amd64' }}
