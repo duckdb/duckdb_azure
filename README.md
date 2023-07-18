@@ -5,6 +5,13 @@ may not work as expected.
 # DuckDB Azure Extension
 This extension adds a filesystem abstraction for Azure blob storage to DuckDB.
 
+## Binary distribution
+Binaries are available in the main extension repository for DuckDB only for nightly builds at the moment, but will be 
+available next release of DuckDB (v0.9.0)
+
+## Supported architectures
+The extension is tested & distributed for Linux (x64), MacOS (x64, arm64) and Windows (x64)
+
 ## Usage
 Authentication is done by setting the connection string:
 
