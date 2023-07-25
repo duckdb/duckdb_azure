@@ -12,6 +12,7 @@ require-env AZURE_STORAGE_CONNECTION_STRING
 statement ok
 SET azure_storage_connection_string = '${AZURE_STORAGE_CONNECTION_STRING}';
 
+# Testing private blobs
 query I
 SELECT * from GLOB("azure://testing-private/*.*") order by file;
 ----
@@ -34,3 +35,27 @@ query I
 SELECT * from GLOB("azure://testing-private/lineitem.*") order by file;
 ----
 azure://testing-private/lineitem.csv
+
+# Testing public blobs
+query I
+SELECT * from GLOB("azure://testing-public/*.*") order by file;
+----
+azure://testing-public/l.csv
+azure://testing-public/l.parquet
+azure://testing-public/lineitem.csv
+
+query I
+SELECT * from GLOB("azure://testing-public/*.csv") order by file;
+----
+azure://testing-public/l.csv
+azure://testing-public/lineitem.csv
+
+query I
+SELECT * from GLOB("azure://testing-public/*.parquet") order by file;
+----
+azure://testing-public/l.parquet
+
+query I
+SELECT * from GLOB("azure://testing-public/lineitem.*") order by file;
+----
+azure://testing-public/lineitem.csv
