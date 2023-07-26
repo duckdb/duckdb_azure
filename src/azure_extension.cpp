@@ -18,7 +18,6 @@ namespace duckdb {
 
 BlobClientWrapper::BlobClientWrapper(AzureAuthentication auth, const string& path) {
 	auto container_client = Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(auth.connection_string, auth.container);
-	container_client.CreateIfNotExists();
 	blob_client = make_uniq<Azure::Storage::Blobs::BlockBlobClient>(container_client.GetBlockBlobClient(path));
 }
 BlobClientWrapper::~BlobClientWrapper() = default;
