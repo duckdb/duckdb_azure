@@ -5,8 +5,10 @@ conn_string="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountK
 
 # Create container
 az storage container create -n testing-private  --connection-string $conn_string
+az storage container create -n testing-public  --connection-string $conn_string --public-access blob
 
 # Upload test files
 for filename in ./data/*; do
   az storage blob upload -f $filename -c testing-private --connection-string $conn_string
+  az storage blob upload -f $filename -c testing-public --connection-string $conn_string
 done
