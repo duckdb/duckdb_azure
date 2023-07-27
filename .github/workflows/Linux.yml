@@ -23,7 +23,7 @@ jobs:
             container: 'quay.io/pypa/manylinux2014_x86_64'
             vcpkg_triplet: 'x64-linux'
           - arch: 'linux_amd64'
-            container: 'ubuntu:16.04'
+            container: 'ubuntu:18.04'
             vcpkg_triplet: 'x64-linux'
           - arch: 'linux_arm64'
             container: 'ubuntu:18.04'
@@ -60,19 +60,27 @@ jobs:
         fetch-depth: 0
         submodules: 'true'
 
-    - name: install npm
+    - name: install Azure test service
+      if: ${{ matrix.arch == 'linux_amd64_gcc4' }}
+      run: |
+        yum install -y nodejs npm
+        npm install -g azurite
+        echo -e "[azure-cli]\nname=Azure CLI\nbaseurl=https://packages.microsoft.com/yumrepos/azure-cli\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" | tee /etc/yum.repos.d/azure-cli.repo
+        yum install -y azure-cli
+
+    - name: install Azure test service
       if: ${{ matrix.arch == 'linux_amd64' }}
       run: |
         curl -fsSL https://deb.nodesource.com/setup_16.x | bash
         apt-get install -y -qq nodejs
         node -v 
         npm -v
-
-    - name: Launch & populate Azure test service
-      if: ${{ matrix.arch == 'linux_amd64' }}
-      run: |
         npm install -g azurite
         curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+    - name: Launch & populate Azure test service
+      if: ${{ matrix.arch == 'linux_amd64' || matrix.arch == 'linux_amd64_gcc4' }}
+      run: |
         azurite > azurite_log.txt 2>&1 &
         sleep 10
         ./scripts/upload_test_files_to_azurite.sh
@@ -109,11 +117,12 @@ jobs:
       run: |
         make release
 
-    # Some issues with azurite on linux remain for some reason
-#    - name: Test extension
-#      if: ${{ matrix.arch == 'linux_amd64'}}
-#      run: |
-#        make test
+    # Todo: fix azurite crashing on ubuntu when testing
+    - name: Test extension
+#      if: ${{ matrix.arch == 'linux_amd64_gcc4' || matrix.arch == 'linux_amd64'}}
+      if: ${{ matrix.arch == 'linux_amd64_gcc4' }}
+      run: |
+        make test
 
     - uses: actions/upload-artifact@v2
       with:
@@ -145,8 +154,8 @@ jobs:
           ./scripts/extension-upload.sh azure `git log -1 --format=%h` $DUCKDB_VERSION ${{matrix.arch}} $BUCKET_NAME false
         fi
 
-#    - name: Azure test server log
-#      if: always() && matrix.arch == 'linux_amd64'
-#      shell: bash
-#      run: |
-#        cat azurite_log.txt
+    - name: Azure test server log
+      if: always() && matrix.arch == 'linux_amd64_gcc4'
+      shell: bash
+      run: |
+        cat azurite_log.txt

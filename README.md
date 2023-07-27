@@ -1,11 +1,16 @@
-Warning: this extension is currently in an experimental state. Feel free to try it out, but be aware
-that only minimal testing was done and no benchmarking.
-
-Warning 2: This extension currently builds with a feature branch of DuckDB. A PR is being worked on. When the PR is merged,
-this extension will be included in (nightly) DuckDB releases.
+## Experimental warning
+This extension is currently in an experimental state. Feel free to try it out, but be aware some things
+may not work as expected.
 
 # DuckDB Azure Extension
 This extension adds a filesystem abstraction for Azure blob storage to DuckDB.
+
+## Binary distribution
+Binaries are available in the main extension repository for DuckDB only for nightly builds at the moment, but will be 
+available next release of DuckDB (v0.9.0)
+
+## Supported architectures
+The extension is tested & distributed for Linux (x64), MacOS (x64, arm64) and Windows (x64)
 
 ## Usage
 Authentication is done by setting the connection string:
