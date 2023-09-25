@@ -1,3 +1,5 @@
+
+
 ## Experimental warning
 This extension is currently in an experimental state. Feel free to try it out, but be aware some things
 may not work as expected.
@@ -12,22 +14,9 @@ available next release of DuckDB (v0.9.0)
 ## Supported architectures
 The extension is tested & distributed for Linux (x64), MacOS (x64, arm64) and Windows (x64)
 
-## Usage
-Authentication is done by setting the connection string:
+## Documentation
 
-```SQL
-SET azure_storage_connection_string = '<your_connection_string>';
-```
-
-After setting the connection string, azure blob storage can be queried:
-```SQL
-SELECT count(*) FROM 'azure://<my_container>/<my_file>.<parquet_or_csv>';
-```
-
-Blobs are also supported:
-```SQL
-SELECT * from 'azure://<my_container>/*.csv';
-```
+See the [Azure page in the DuckDB documentation](https://duckdb.org/docs/extensions/azure).
 
 Check out the tests in `test/sql` for more examples.
 
