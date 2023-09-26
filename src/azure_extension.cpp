@@ -155,6 +155,11 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_storage_connection_string", value)) {
 		connection_string = value.ToString();
 	}
+
+	if (connection_string.empty()) {
+		throw IOException("No azure_storage_connection_string found, please set using SET azure_storage_connection_string='<your connection string>' ");
+	}
+
 	auto container_client = Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(connection_string, parsed_azure_url.container);
 	container_client.CreateIfNotExists();
 
