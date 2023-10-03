@@ -19,7 +19,7 @@ jobs:
     uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@v0.9.0
     with:
       duckdb_version: v0.9.0
-      extension_name: quack
+      extension_name: azure
       extension_ref: ${{ github.ref }}
     # Secrets are used to pass S3 credentials to the extension-upload script for distributing.
     # Note that for security, switching to either explicitly passing secrets or moving the workflow into the extension
