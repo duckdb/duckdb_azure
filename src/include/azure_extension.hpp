@@ -19,8 +19,15 @@ public:
 };
 
 struct AzureAuthentication {
+	AzureAuthentication(string container_p, string connection_string_p, string account_name_p,  string credential_chain_p) :
+	      connection_string(connection_string_p), account_name(account_name_p){};
+
+	//! Auth method #1: setting the connection string
 	string connection_string;
-	string container;
+
+	//! Auth method #1: setting account name + defining a credential chain.
+	string account_name;
+	string credential_chain;
 };
 
 struct AzureParsedUrl {
@@ -30,7 +37,7 @@ struct AzureParsedUrl {
 
 class BlobClientWrapper {
 public:
-	BlobClientWrapper(AzureAuthentication auth, const string& path);
+	BlobClientWrapper(AzureAuthentication& auth, AzureParsedUrl& url);
 	~BlobClientWrapper();
 	Azure::Storage::Blobs::BlobClient* GetClient();
 protected:
@@ -39,7 +46,7 @@ protected:
 
 class AzureStorageFileHandle : public FileHandle {
 public:
-	AzureStorageFileHandle(FileSystem &fs, string path, uint8_t flags, AzureAuthentication auth, AzureParsedUrl parsed_url);
+	AzureStorageFileHandle(FileSystem &fs, string path, uint8_t flags, AzureAuthentication& auth, AzureParsedUrl parsed_url);
 	~AzureStorageFileHandle() override = default;
 
 public:

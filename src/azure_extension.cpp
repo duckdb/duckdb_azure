@@ -1,51 +1,126 @@
 #define DUCKDB_EXTENSION_MAIN
 
 #include "azure_extension.hpp"
+
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
-#include "duckdb/common/string_util.hpp"
-#include "duckdb/function/scalar_function.hpp"
 #include "duckdb/common/file_opener.hpp"
+#include "duckdb/common/string_util.hpp"
 #include "duckdb/function/scalar/string_functions.hpp"
-
-#include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
-
-#include <iostream>
-
+#include "duckdb/function/scalar_function.hpp"
+#include "duckdb/main/extension_util.hpp"
 #include <azure/storage/blobs.hpp>
+#include <azure/identity/default_azure_credential.hpp>
+#include <azure/identity/chained_token_credential.hpp>
+#include <azure/identity/environment_credential.hpp>
+#include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/azure_cli_credential.hpp>
+#include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
+#include <iostream>
 
 namespace duckdb {
 
-BlobClientWrapper::BlobClientWrapper(AzureAuthentication auth, const string& path) {
-	auto container_client = Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(auth.connection_string, auth.container);
-	blob_client = make_uniq<Azure::Storage::Blobs::BlockBlobClient>(container_client.GetBlockBlobClient(path));
+static Azure::Identity::ChainedTokenCredential::Sources CreateCredentialChainFromSetting(string& credential_chain) {
+	auto chain_list = StringUtil::Split(credential_chain, ';');
+	Azure::Identity::ChainedTokenCredential::Sources result;
+
+	for (const auto& item : chain_list) {
+		if (item == "cli") {
+			result.push_back(std::make_shared<Azure::Identity::AzureCliCredential>());
+		} else if (item == "managed_identity") {
+			result.push_back(std::make_shared<Azure::Identity::ManagedIdentityCredential>());
+		} else if (item == "env") {
+			result.push_back(std::make_shared<Azure::Identity::EnvironmentCredential>());
+		} else if (item == "default") {
+			result.push_back(std::make_shared<Azure::Identity::DefaultAzureCredential>());
+		} else if (item != "none") {
+			throw InvalidInputException("Unknown credential provider found: " + item);
+		}
+	}
+
+	return result;
 }
+
+static AzureAuthentication ParseAzureAuthSettings(FileOpener* opener, AzureParsedUrl parsed_url) {
+	AzureAuthentication auth("","","","");
+
+	Value connection_string_val;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_storage_connection_string", connection_string_val)) {
+		auth.connection_string = connection_string_val.ToString();
+	}
+
+	Value account_name_val;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_account_name", account_name_val)) {
+		auth.account_name = account_name_val.ToString();
+	}
+
+	if (!auth.account_name.empty()) {
+		string credential_chain;
+		Value credential_chain_val;
+		if (FileOpener::TryGetCurrentSetting(opener, "azure_credential_chain", credential_chain_val)) {
+			auth.credential_chain = credential_chain_val.ToString();
+		}
+	}
+
+	return auth;
+}
+
+static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthentication& auth, AzureParsedUrl& url) {
+	if (!auth.connection_string.empty()) {
+		return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(auth.connection_string, url.container);
+	}
+
+	// Build credential chain, from last to first
+	Azure::Identity::ChainedTokenCredential::Sources credential_chain;
+	if (!auth.credential_chain.empty()) {
+		credential_chain = CreateCredentialChainFromSetting(auth.credential_chain);
+	}
+
+	auto accountURL = "https://" + auth.account_name + ".blob.core.windows.net";
+	if (!credential_chain.empty()) {
+		// A set of credentials providers was passed
+		auto chainedTokenCredential = std::make_shared<Azure::Identity::ChainedTokenCredential>(credential_chain);
+		Azure::Storage::Blobs::BlobServiceClient blob_service_client(accountURL, chainedTokenCredential);
+		return blob_service_client.GetBlobContainerClient(url.container);
+	} else {
+		return Azure::Storage::Blobs::BlobContainerClient(accountURL + "/" + url.container);
+	}
+}
+
+BlobClientWrapper::BlobClientWrapper(AzureAuthentication& auth, AzureParsedUrl& url) {
+	auto container_client = GetContainerClient(auth, url);
+	blob_client = make_uniq<Azure::Storage::Blobs::BlockBlobClient>(container_client.GetBlockBlobClient(url.path));
+}
+
 BlobClientWrapper::~BlobClientWrapper() = default;
 Azure::Storage::Blobs::BlobClient* BlobClientWrapper::GetClient() {
     return blob_client.get();
 };
 
+AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, uint8_t flags, AzureAuthentication& auth, AzureParsedUrl parsed_url)
+    : FileHandle(fs, std::move(path_p)), flags(flags), length(0), last_modified(time_t()), buffer_available(0), buffer_idx(0), file_offset(0),
+      buffer_start(0), buffer_end(0), blob_client(auth, parsed_url) {
+	try {
+		auto client = *blob_client.GetClient();
+		auto res = client.GetProperties();
+		length = res.Value.BlobSize;
+	} catch (Azure::Storage::StorageException &e) {
+		throw IOException("AzureStorageFileSystem open file '" + path + "' failed with code'" + e.ErrorCode + "',Reason Phrase: '" + e.ReasonPhrase + "', Message: '" + e.Message + "'");
+	}
+
+	if (flags & FileFlags::FILE_FLAGS_READ) {
+		read_buffer = duckdb::unique_ptr<data_t[]>(new data_t[READ_BUFFER_LEN]);
+	}
+}
+
 unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const string &path, uint8_t flags, FileLockType lock,
                                                         FileCompressionType compression, FileOpener *opener) {
     D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
+
 	auto parsed_url = ParseUrl(path);
+	auto azure_auth = ParseAzureAuthSettings(opener, parsed_url);
 
-	string connection_string;
-	Value value;
-	if (FileOpener::TryGetCurrentSetting(opener, "azure_storage_connection_string", value)) {
-		connection_string = value.ToString();
-	}
-
-	if (connection_string.empty()) {
-		throw IOException("No azure_storage_connection_string found, please set using SET azure_storage_connection_string='<your connection string>' ");
-	}
-
-	AzureAuthentication auth{
-	    connection_string,
-	    parsed_url.container
-	};
-
-    return make_uniq<AzureStorageFileHandle>(*this, path, flags, auth, parsed_url);
+	return make_uniq<AzureStorageFileHandle>(*this, path, flags, azure_auth, parsed_url);
 }
 
 unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, uint8_t flags, FileLockType lock,
@@ -58,22 +133,6 @@ unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, uint
 
     auto handle = CreateHandle(path, flags, lock, compression, opener);
     return std::move(handle);
-}
-
-AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, uint8_t flags, AzureAuthentication auth, AzureParsedUrl parsed_url)
-    : FileHandle(fs, std::move(path_p)), flags(flags), length(0), buffer_available(0), buffer_idx(0), file_offset(0),
-      buffer_start(0), buffer_end(0), blob_client(std::move(auth), parsed_url.path) {
-	try {
-		auto client = *blob_client.GetClient();
-		auto res = client.GetProperties();
-		length = res.Value.BlobSize;
-	} catch (Azure::Storage::StorageException &e) {
-		throw IOException("AzureStorageFileSystem open file " + path + " failed with " + e.ErrorCode + "Reason Phrase: " + e.ReasonPhrase);
-	}
-
-	if (flags & FileFlags::FILE_FLAGS_READ) {
-		read_buffer = duckdb::unique_ptr<data_t[]>(new data_t[READ_BUFFER_LEN]);
-	}
 }
 
 int64_t AzureStorageFileSystem::GetFileSize(FileHandle &handle) {
@@ -101,11 +160,15 @@ void AzureStorageFileSystem::FileSync(FileHandle &handle) {
 }
 
 static void LoadInternal(DatabaseInstance &instance) {
+	// Load filesystem
     auto &fs = instance.GetFileSystem();
     fs.RegisterSubSystem(make_uniq<AzureStorageFileSystem>());
 
+	// Load extension config
 	auto &config = DBConfig::GetConfig(instance);
 	config.AddExtensionOption("azure_storage_connection_string", "Azure connection string, used for authenticating and configuring azure requests", LogicalType::VARCHAR);
+	config.AddExtensionOption("azure_account_name", "Azure account name, when set, the extension will attempt to automatically detect credentials", LogicalType::VARCHAR);
+	config.AddExtensionOption("azure_credential_chain", "Ordered list of Azure credential providers, in string format separated by ';'. E.g. 'cli;managed_identity;env'", LogicalType::VARCHAR, "default");
 }
 
 int64_t AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes) {
@@ -146,32 +209,29 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 	if (opener == nullptr) {
 		throw InternalException("Cannot do Azure storage Glob without FileOpener");
 	}
-	auto parsed_azure_url = AzureStorageFileSystem::ParseUrl(path);
+	auto azure_url = AzureStorageFileSystem::ParseUrl(path);
+	auto azure_auth = ParseAzureAuthSettings(opener, azure_url);
 
 	// Azure matches on prefix, not glob pattern, so we take a substring until the first wildcard
-	auto first_wildcard_pos = parsed_azure_url.path.find_first_of("*[\\");
+	auto first_wildcard_pos = azure_url.path.find_first_of("*[\\");
 	if (first_wildcard_pos == string::npos) {
 		return {path};
 	}
 
-	string shared_path = parsed_azure_url.path.substr(0, first_wildcard_pos);
-	Value value;
-	string connection_string;
-	if (FileOpener::TryGetCurrentSetting(opener, "azure_storage_connection_string", value)) {
-		connection_string = value.ToString();
-	}
-
-	if (connection_string.empty()) {
-		throw IOException("No azure_storage_connection_string found, please set using SET azure_storage_connection_string='<your connection string>' ");
-	}
-
-	auto container_client = Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(connection_string, parsed_azure_url.container);
+	string shared_path = azure_url.path.substr(0, first_wildcard_pos);
+	auto container_client = GetContainerClient(azure_auth, azure_url);
 
 	vector<Azure::Storage::Blobs::Models::BlobItem> found_keys;
 	Azure::Storage::Blobs::ListBlobsOptions options;
 	options.Prefix = shared_path;
 	while(true) {
-		auto res = container_client.ListBlobs(options);
+		Azure::Storage::Blobs::ListBlobsPagedResponse res;
+		try {
+			res = container_client.ListBlobs(options);
+		} catch (Azure::Storage::StorageException &e) {
+			throw IOException("AzureStorageFileSystem Read to " + path + " failed with " + e.ErrorCode + "Reason Phrase: " + e.ReasonPhrase);
+		}
+
 		found_keys.insert(found_keys.end(), res.Blobs.begin(), res.Blobs.end());
 		if (res.NextPageToken) {
 			options.ContinuationToken = res.NextPageToken;
@@ -180,14 +240,14 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 		}
 	}
 
-	vector<string> pattern_splits = StringUtil::Split(parsed_azure_url.path, "/");
+	vector<string> pattern_splits = StringUtil::Split(azure_url.path, "/");
 	vector<string> result;
 	for (const auto &key : found_keys) {
 		vector<string> key_splits = StringUtil::Split(key.Name, "/");
 		bool is_match = Match(key_splits.begin(), key_splits.end(), pattern_splits.begin(), pattern_splits.end());
 
 		if (is_match) {
-			auto result_full_url = "azure://" + parsed_azure_url.container + "/" + key.Name;
+			auto result_full_url = "azure://" + azure_url.container + "/" + key.Name;
 			result.push_back(result_full_url);
 		}
 	}
