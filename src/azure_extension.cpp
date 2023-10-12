@@ -87,8 +87,10 @@ static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthen
 		auto chainedTokenCredential = std::make_shared<Azure::Identity::ChainedTokenCredential>(credential_chain);
 		Azure::Storage::Blobs::BlobServiceClient blob_service_client(accountURL, chainedTokenCredential);
 		return blob_service_client.GetBlobContainerClient(url.container);
-	} else {
+	} else if (!auth.account_name.empty()){
 		return Azure::Storage::Blobs::BlobContainerClient(accountURL + "/" + url.container);
+	} else {
+		throw InvalidInputException("No valid Azure credentials found, use either the azure_connection_string or azure_account_name");
 	}
 }
 
@@ -173,7 +175,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	auto &config = DBConfig::GetConfig(instance);
 	config.AddExtensionOption("azure_storage_connection_string", "Azure connection string, used for authenticating and configuring azure requests", LogicalType::VARCHAR);
 	config.AddExtensionOption("azure_account_name", "Azure account name, when set, the extension will attempt to automatically detect credentials", LogicalType::VARCHAR);
-	config.AddExtensionOption("azure_credential_chain", "Ordered list of Azure credential providers, in string format separated by ';'. E.g. 'cli;managed_identity;env'", LogicalType::VARCHAR, "default");
+	config.AddExtensionOption("azure_credential_chain", "Ordered list of Azure credential providers, in string format separated by ';'. E.g. 'cli;managed_identity;env'", LogicalType::VARCHAR, "none");
 	config.AddExtensionOption("azure_endpoint", "Override the azure endpoint for when the Azure credential providers are used.", LogicalType::VARCHAR, "blob.core.windows.net");
 }
 
