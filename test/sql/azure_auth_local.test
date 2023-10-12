@@ -86,3 +86,9 @@ query I
 SELECT count(*) FROM 'azure://testing-private/l*.parquet';
 ----
 180525
+
+statement ok
+set azure_endpoint='nop.nop';
+
+statement error
+SELECT count(*) FROM 'azure://testing-private/l*.parquet';

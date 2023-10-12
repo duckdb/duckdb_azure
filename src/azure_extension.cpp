@@ -41,8 +41,8 @@ static Azure::Identity::ChainedTokenCredential::Sources CreateCredentialChainFro
 	return result;
 }
 
-static AzureAuthentication ParseAzureAuthSettings(FileOpener* opener, AzureParsedUrl parsed_url) {
-	AzureAuthentication auth("","","","");
+static AzureAuthentication ParseAzureAuthSettings(FileOpener* opener) {
+	AzureAuthentication auth;
 
 	Value connection_string_val;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_storage_connection_string", connection_string_val)) {
@@ -52,6 +52,11 @@ static AzureAuthentication ParseAzureAuthSettings(FileOpener* opener, AzureParse
 	Value account_name_val;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_account_name", account_name_val)) {
 		auth.account_name = account_name_val.ToString();
+	}
+
+	Value endpoint_val;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_endpoint", endpoint_val)) {
+		auth.endpoint = endpoint_val.ToString();
 	}
 
 	if (!auth.account_name.empty()) {
@@ -76,7 +81,7 @@ static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthen
 		credential_chain = CreateCredentialChainFromSetting(auth.credential_chain);
 	}
 
-	auto accountURL = "https://" + auth.account_name + ".blob.core.windows.net";
+	auto accountURL = "https://" + auth.account_name + "." + auth.endpoint;
 	if (!credential_chain.empty()) {
 		// A set of credentials providers was passed
 		auto chainedTokenCredential = std::make_shared<Azure::Identity::ChainedTokenCredential>(credential_chain);
@@ -118,7 +123,7 @@ unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const st
     D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
 
 	auto parsed_url = ParseUrl(path);
-	auto azure_auth = ParseAzureAuthSettings(opener, parsed_url);
+	auto azure_auth = ParseAzureAuthSettings(opener);
 
 	return make_uniq<AzureStorageFileHandle>(*this, path, flags, azure_auth, parsed_url);
 }
@@ -169,6 +174,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	config.AddExtensionOption("azure_storage_connection_string", "Azure connection string, used for authenticating and configuring azure requests", LogicalType::VARCHAR);
 	config.AddExtensionOption("azure_account_name", "Azure account name, when set, the extension will attempt to automatically detect credentials", LogicalType::VARCHAR);
 	config.AddExtensionOption("azure_credential_chain", "Ordered list of Azure credential providers, in string format separated by ';'. E.g. 'cli;managed_identity;env'", LogicalType::VARCHAR, "default");
+	config.AddExtensionOption("azure_endpoint", "Override the azure endpoint for when the Azure credential providers are used.", LogicalType::VARCHAR, "blob.core.windows.net");
 }
 
 int64_t AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes) {
@@ -210,7 +216,7 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 		throw InternalException("Cannot do Azure storage Glob without FileOpener");
 	}
 	auto azure_url = AzureStorageFileSystem::ParseUrl(path);
-	auto azure_auth = ParseAzureAuthSettings(opener, azure_url);
+	auto azure_auth = ParseAzureAuthSettings(opener);
 
 	// Azure matches on prefix, not glob pattern, so we take a substring until the first wildcard
 	auto first_wildcard_pos = azure_url.path.find_first_of("*[\\");

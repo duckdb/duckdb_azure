@@ -19,15 +19,13 @@ public:
 };
 
 struct AzureAuthentication {
-	AzureAuthentication(string container_p, string connection_string_p, string account_name_p,  string credential_chain_p) :
-	      connection_string(connection_string_p), account_name(account_name_p){};
-
 	//! Auth method #1: setting the connection string
 	string connection_string;
 
-	//! Auth method #1: setting account name + defining a credential chain.
+	//! Auth method #2: setting account name + defining a credential chain.
 	string account_name;
 	string credential_chain;
+	string endpoint;
 };
 
 struct AzureParsedUrl {
