@@ -18,6 +18,7 @@ jobs:
     with:
       duckdb_version: v0.9.1
       extension_name: azure
+      vcpkg_commit: 9edb1b8e590cc086563301d735cae4b6e732d2d2 # TODO: remove pinned vcpkg commit when updating duckdb version
 
   duckdb-stable-deploy:
     name: Deploy extension binaries
