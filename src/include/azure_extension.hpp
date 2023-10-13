@@ -3,12 +3,12 @@
 #include "duckdb.hpp"
 
 namespace Azure {
-	namespace Storage {
-    	namespace Blobs {
-        	class BlobClient;
-        }
-    }
+namespace Storage {
+namespace Blobs {
+class BlobClient;
 }
+} // namespace Storage
+} // namespace Azure
 
 namespace duckdb {
 
@@ -35,16 +35,18 @@ struct AzureParsedUrl {
 
 class BlobClientWrapper {
 public:
-	BlobClientWrapper(AzureAuthentication& auth, AzureParsedUrl& url);
+	BlobClientWrapper(AzureAuthentication &auth, AzureParsedUrl &url);
 	~BlobClientWrapper();
-	Azure::Storage::Blobs::BlobClient* GetClient();
+	Azure::Storage::Blobs::BlobClient *GetClient();
+
 protected:
 	unique_ptr<Azure::Storage::Blobs::BlobClient> blob_client;
 };
 
 class AzureStorageFileHandle : public FileHandle {
 public:
-	AzureStorageFileHandle(FileSystem &fs, string path, uint8_t flags, AzureAuthentication& auth, AzureParsedUrl parsed_url);
+	AzureStorageFileHandle(FileSystem &fs, string path, uint8_t flags, AzureAuthentication &auth,
+	                       AzureParsedUrl parsed_url);
 	~AzureStorageFileHandle() override = default;
 
 public:
@@ -103,7 +105,7 @@ public:
 	static void Verify();
 
 protected:
-	static AzureParsedUrl ParseUrl(const string& url);
+	static AzureParsedUrl ParseUrl(const string &url);
 	static void ReadRange(FileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len);
 	virtual duckdb::unique_ptr<AzureStorageFileHandle> CreateHandle(const string &path, uint8_t flags,
 	                                                                FileLockType lock, FileCompressionType compression,
