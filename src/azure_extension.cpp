@@ -20,7 +20,7 @@
 
 namespace duckdb {
 
-static Azure::Identity::ChainedTokenCredential::Sources CreateCredentialChainFromSetting(string& credential_chain) {
+static Azure::Identity::ChainedTokenCredential::Sources CreateCredentialChainFromSetting(const string& credential_chain) {
 	auto chain_list = StringUtil::Split(credential_chain, ';');
 	Azure::Identity::ChainedTokenCredential::Sources result;
 

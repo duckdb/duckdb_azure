@@ -16,8 +16,7 @@ require-env DUCKDB_CLI_TEST_ENV_AVAILABLE
 # TODO: We should setup a key in CI to automatically test this. Ideally that would also involve Managed identities and
 #       service principals
 
-
-# Set connection string from env var
+# Set the storage account name
 statement ok
 set azure_account_name='duckdbtesting';
 
