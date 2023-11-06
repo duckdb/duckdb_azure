@@ -159,9 +159,8 @@ time_t AzureStorageFileSystem::GetLastModifiedTime(FileHandle &handle) {
 	return afh.last_modified;
 }
 
-// TODO: this is currently a bit weird: it should be az:// but that shit dont work
 bool AzureStorageFileSystem::CanHandleFile(const string &fpath) {
-	return fpath.rfind("azure://", 0) == 0;
+	return fpath.rfind("azure://", 0) * fpath.rfind("az://", 0) == 0;
 }
 
 void AzureStorageFileSystem::Seek(FileHandle &handle, idx_t location) {
@@ -273,7 +272,7 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 		bool is_match = Match(key_splits.begin(), key_splits.end(), pattern_splits.begin(), pattern_splits.end());
 
 		if (is_match) {
-			auto result_full_url = "azure://" + azure_url.container + "/" + key.Name;
+			auto result_full_url = azure_url.prefix + azure_url.container + "/" + key.Name;
 			result.push_back(result_full_url);
 		}
 	}
@@ -376,22 +375,24 @@ void AzureStorageFileSystem::ReadRange(FileHandle &handle, idx_t file_offset, ch
 }
 
 AzureParsedUrl AzureStorageFileSystem::ParseUrl(const string &url) {
-	string container, path;
+	string container, prefix, path;
 
-	if (url.rfind("azure://", 0) != 0) {
-		throw IOException("URL needs to start with s3://");
+	if (url.rfind("azure://", 0) * url.rfind("az://", 0) != 0) {
+		throw IOException("URL needs to start with azure:// or az://");
 	}
-	auto slash_pos = url.find('/', 8);
+	auto prefix_end_pos = url.find("//") + 2;
+	auto slash_pos = url.find('/', prefix_end_pos);
 	if (slash_pos == string::npos) {
 		throw IOException("URL needs to contain a '/' after the host");
 	}
-	container = url.substr(8, slash_pos - 8);
+	container = url.substr(prefix_end_pos, slash_pos - prefix_end_pos);
 	if (container.empty()) {
 		throw IOException("URL needs to contain a bucket name");
 	}
 
+	prefix = url.substr(0, prefix_end_pos);
 	path = url.substr(slash_pos + 1);
-	return {container, path};
+	return {container, prefix, path};
 }
 
 void AzureExtension::Load(DuckDB &db) {

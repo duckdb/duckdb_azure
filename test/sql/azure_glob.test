@@ -59,3 +59,19 @@ query I
 SELECT * from GLOB("azure://testing-public/lineitem.*") order by file;
 ----
 azure://testing-public/lineitem.csv
+
+# Testing private blobs with az:// prefix
+query I
+SELECT * from GLOB("az://testing-private/*.*") order by file;
+----
+az://testing-private/l.csv
+az://testing-private/l.parquet
+az://testing-private/lineitem.csv
+
+# Testing public blobs with az:// prefix
+query I
+SELECT * from GLOB("az://testing-public/*.*") order by file;
+----
+az://testing-public/l.csv
+az://testing-public/l.parquet
+az://testing-public/lineitem.csv

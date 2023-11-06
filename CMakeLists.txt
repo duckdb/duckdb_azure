@@ -16,8 +16,12 @@ add_library(${EXTENSION_NAME} STATIC ${EXTENSION_SOURCES})
 set(PARAMETERS "-warnings")
 build_loadable_extension(${TARGET_NAME} ${PARAMETERS} ${EXTENSION_SOURCES})
 
-find_package(azure-identity-cpp CONFIG REQUIRED)
-find_package(azure-storage-blobs-cpp CONFIG REQUIRED)
+find_package(azure-identity-cpp CONFIG)
+find_package(azure-storage-blobs-cpp CONFIG)
+
+if(NOT ${azure-identity-cpp_FOUND} OR NOT ${azure-storage-blobs-cpp_FOUND})
+  message(FATAL_ERROR "Azure SDK not found, did you set up vcpkg correctly?")
+endif()
 
 # Static lib
 target_link_libraries(${EXTENSION_NAME} Azure::azure-identity

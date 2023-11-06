@@ -30,6 +30,7 @@ struct AzureAuthentication {
 
 struct AzureParsedUrl {
 	string container;
+	string prefix;
 	string path;
 };
 
