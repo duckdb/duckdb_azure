@@ -2,19 +2,21 @@
 
 #include "azure_extension.hpp"
 
+#include "azure_secret.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/main/secret/secret.hpp"
 #include "duckdb/function/scalar/string_functions.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension_util.hpp"
-#include <azure/storage/blobs.hpp>
-#include <azure/identity/default_azure_credential.hpp>
+#include <azure/identity/azure_cli_credential.hpp>
 #include <azure/identity/chained_token_credential.hpp>
+#include <azure/identity/default_azure_credential.hpp>
 #include <azure/identity/environment_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
-#include <azure/identity/azure_cli_credential.hpp>
+#include <azure/storage/blobs.hpp>
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include <iostream>
 
@@ -42,8 +44,18 @@ CreateCredentialChainFromSetting(const string &credential_chain) {
 	return result;
 }
 
-static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener) {
+static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener, const string& path) {
 	AzureAuthentication auth;
+
+	// Lookup Secret
+	auto context = opener->TryGetClientContext();
+	if (context) {
+		auto transaction = CatalogTransaction::GetSystemCatalogTransaction(*context);
+		auto secret_entry = context->db->config.secret_manager->GetSecretByPath(transaction, path, "azure");
+		if (secret_entry) {
+			auth.secret = std::dynamic_pointer_cast<const AzureSecret>(secret_entry->secret);
+		}
+	}
 
 	Value connection_string_val;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_storage_connection_string", connection_string_val)) {
@@ -72,6 +84,14 @@ static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener) {
 }
 
 static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthentication &auth, AzureParsedUrl &url) {
+	// Firstly, try to use the auth from the secret
+	if (auth.secret) {
+		auto secret_client = auth.secret->GetContainerClient(url);
+		if (secret_client) {
+			return *secret_client;
+		}
+	}
+
 	if (!auth.connection_string.empty()) {
 		return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(auth.connection_string,
 		                                                                              url.container);
@@ -132,7 +152,7 @@ unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const st
 	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
 
 	auto parsed_url = ParseUrl(path);
-	auto azure_auth = ParseAzureAuthSettings(opener);
+	auto azure_auth = ParseAzureAuthSettings(opener, path);
 
 	return make_uniq<AzureStorageFileHandle>(*this, path, flags, azure_auth, parsed_url);
 }
@@ -176,6 +196,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// Load filesystem
 	auto &fs = instance.GetFileSystem();
 	fs.RegisterSubSystem(make_uniq<AzureStorageFileSystem>());
+
+	// Load Secret functions
+	CreateAzureSecretFunctions::Register(instance);
 
 	// Load extension config
 	auto &config = DBConfig::GetConfig(instance);
@@ -234,7 +257,7 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 		throw InternalException("Cannot do Azure storage Glob without FileOpener");
 	}
 	auto azure_url = AzureStorageFileSystem::ParseUrl(path);
-	auto azure_auth = ParseAzureAuthSettings(opener);
+	auto azure_auth = ParseAzureAuthSettings(opener, path);
 
 	// Azure matches on prefix, not glob pattern, so we take a substring until the first wildcard
 	auto first_wildcard_pos = azure_url.path.find_first_of("*[\\");
