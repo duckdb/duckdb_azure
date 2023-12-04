@@ -266,29 +266,28 @@ static void LoadInternal(DatabaseInstance &instance) {
 	config.AddExtensionOption("azure_endpoint",
 	                          "Override the azure endpoint for when the Azure credential providers are used.",
 	                          LogicalType::VARCHAR, "blob.core.windows.net");
-	config.AddExtensionOption(
-	    "azure_http_stats",
-	    "Include http info from the Azure Storage in the explain analyze statement\n"
-	    "Warnings:\n"
-		" - the result will be incorrect for more than one active DuckDB connection.\n"
-		" - note: calculation of total received and sent bytes is not yet implemented.",
-	    LogicalType::BOOLEAN, false);
+	config.AddExtensionOption("azure_http_stats",
+	                          "Include http info from the Azure Storage in the explain analyze statement\n"
+	                          "Warnings:\n"
+	                          " - the result will be incorrect for more than one active DuckDB connection.\n"
+	                          " - note: calculation of total received and sent bytes is not yet implemented.",
+	                          LogicalType::BOOLEAN, false);
 
 	AzureReadOptions default_read_options;
 	config.AddExtensionOption("azure_read_transfer_concurrency",
 	                          "Maximum number of threads the Azure client can use for a single parallel read. "
-				  "If azure_read_transfer_chunk_size is less than azure_read_buffer_size then setting "
-				  "this > 1 will allow the Azure client to do concurrent requests to fill the buffer.",
+	                          "If azure_read_transfer_chunk_size is less than azure_read_buffer_size then setting "
+	                          "this > 1 will allow the Azure client to do concurrent requests to fill the buffer.",
 	                          LogicalType::INTEGER, Value::INTEGER(default_read_options.transfer_concurrency));
 
 	config.AddExtensionOption("azure_read_transfer_chunk_size",
 	                          "Maximum size in bytes that the Azure client will read in a single request. "
-				  "It is recommended that this is a factor of azure_read_buffer_size.",
+	                          "It is recommended that this is a factor of azure_read_buffer_size.",
 	                          LogicalType::BIGINT, Value::BIGINT(default_read_options.transfer_chunk_size));
 
 	config.AddExtensionOption("azure_read_buffer_size",
 	                          "Size of the read buffer.  It is recommended that this is evenly divisible by "
-				  "azure_read_transfer_chunk_size.",
+	                          "azure_read_transfer_chunk_size.",
 	                          LogicalType::UBIGINT, Value::UBIGINT(default_read_options.buffer_size));
 }
 
