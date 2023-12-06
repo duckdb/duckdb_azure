@@ -267,10 +267,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 	                          "Override the azure endpoint for when the Azure credential providers are used.",
 	                          LogicalType::VARCHAR, "blob.core.windows.net");
 	config.AddExtensionOption("azure_http_stats",
-	                          "Include http info from the Azure Storage in the explain analyze statement\n"
-	                          "Warnings:\n"
-	                          " - the result will be incorrect for more than one active DuckDB connection.\n"
-	                          " - note: calculation of total received and sent bytes is not yet implemented.",
+	                          "Include http info from the Azure Storage in the explain analyze statement. "
+	                          "Notice that the result may be incorrect for more than one active DuckDB connection "
+	                          "and the calculation of total received and sent bytes is not yet implemented.",
 	                          LogicalType::BOOLEAN, false);
 
 	AzureReadOptions default_read_options;

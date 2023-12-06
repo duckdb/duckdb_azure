@@ -114,6 +114,7 @@ public:
 	static void Verify();
 
 public:
+	// guarded global varables are used here to share the http_state when parsing multiple files
 	static mutex azure_log_lock;
 	static weak_ptr<HTTPState> http_state;
 	static bool listener_set;
