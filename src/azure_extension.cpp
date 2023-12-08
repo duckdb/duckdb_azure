@@ -4,12 +4,15 @@
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/http_state.hpp"
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/function/scalar/string_functions.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension_util.hpp"
+#include "duckdb/main/client_data.hpp"
 #include <azure/storage/blobs.hpp>
+#include <azure/core/diagnostics/logger.hpp>
 #include <azure/identity/default_azure_credential.hpp>
 #include <azure/identity/chained_token_credential.hpp>
 #include <azure/identity/environment_credential.hpp>
@@ -19,6 +22,32 @@
 #include <iostream>
 
 namespace duckdb {
+
+using namespace Azure::Core::Diagnostics;
+
+mutex AzureStorageFileSystem::azure_log_lock = {};
+weak_ptr<HTTPState> AzureStorageFileSystem::http_state = std::weak_ptr<HTTPState>();
+bool AzureStorageFileSystem::listener_set = false;
+
+// TODO: extract received/sent bytes information
+static void Log(Logger::Level level, std::string const &message) {
+	auto http_state_ptr = AzureStorageFileSystem::http_state;
+	auto http_state = http_state_ptr.lock();
+	if (!http_state) {
+		throw std::runtime_error("HTTP state weak pointer failed to lock");
+	}
+	if (message.find("Request") != std::string::npos) {
+		if (message.find("Request : HEAD") != std::string::npos) {
+			http_state->head_count++;
+		} else if (message.find("Request : GET") != std::string::npos) {
+			http_state->get_count++;
+		} else if (message.find("Request : POST") != std::string::npos) {
+			http_state->post_count++;
+		} else if (message.find("Request : PUT") != std::string::npos) {
+			http_state->put_count++;
+		}
+	}
+}
 
 static Azure::Identity::ChainedTokenCredential::Sources
 CreateCredentialChainFromSetting(const string &credential_chain) {
@@ -164,6 +193,27 @@ unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, uint
                                                         FileCompressionType compression, FileOpener *opener) {
 	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
 
+	Value value;
+	bool enable_http_stats = false;
+	auto context = FileOpener::TryGetClientContext(opener);
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_http_stats", value)) {
+		enable_http_stats = value.GetValue<bool>();
+	}
+
+	if (context && enable_http_stats) {
+		unique_lock<mutex> lck(AzureStorageFileSystem::azure_log_lock);
+		if (!context->client_data->http_state) {
+			context->client_data->http_state = make_shared<HTTPState>();
+		}
+		AzureStorageFileSystem::http_state = context->client_data->http_state;
+
+		if (!AzureStorageFileSystem::listener_set) {
+			Logger::SetListener(std::bind(&Log, std::placeholders::_1, std::placeholders::_2));
+			Logger::SetLevel(Logger::Level::Verbose);
+			AzureStorageFileSystem::listener_set = true;
+		}
+	}
+
 	if (flags & FileFlags::FILE_FLAGS_WRITE) {
 		throw NotImplementedException("Writing to Azure containers is currently not supported");
 	}
@@ -216,22 +266,27 @@ static void LoadInternal(DatabaseInstance &instance) {
 	config.AddExtensionOption("azure_endpoint",
 	                          "Override the azure endpoint for when the Azure credential providers are used.",
 	                          LogicalType::VARCHAR, "blob.core.windows.net");
+	config.AddExtensionOption("azure_http_stats",
+	                          "Include http info from the Azure Storage in the explain analyze statement. "
+	                          "Notice that the result may be incorrect for more than one active DuckDB connection "
+	                          "and the calculation of total received and sent bytes is not yet implemented.",
+	                          LogicalType::BOOLEAN, false);
 
 	AzureReadOptions default_read_options;
 	config.AddExtensionOption("azure_read_transfer_concurrency",
 	                          "Maximum number of threads the Azure client can use for a single parallel read. "
-				  "If azure_read_transfer_chunk_size is less than azure_read_buffer_size then setting "
-				  "this > 1 will allow the Azure client to do concurrent requests to fill the buffer.",
+	                          "If azure_read_transfer_chunk_size is less than azure_read_buffer_size then setting "
+	                          "this > 1 will allow the Azure client to do concurrent requests to fill the buffer.",
 	                          LogicalType::INTEGER, Value::INTEGER(default_read_options.transfer_concurrency));
 
 	config.AddExtensionOption("azure_read_transfer_chunk_size",
 	                          "Maximum size in bytes that the Azure client will read in a single request. "
-				  "It is recommended that this is a factor of azure_read_buffer_size.",
+	                          "It is recommended that this is a factor of azure_read_buffer_size.",
 	                          LogicalType::BIGINT, Value::BIGINT(default_read_options.transfer_chunk_size));
 
 	config.AddExtensionOption("azure_read_buffer_size",
 	                          "Size of the read buffer.  It is recommended that this is evenly divisible by "
-				  "azure_read_transfer_chunk_size.",
+	                          "azure_read_transfer_chunk_size.",
 	                          LogicalType::UBIGINT, Value::UBIGINT(default_read_options.buffer_size));
 }
 

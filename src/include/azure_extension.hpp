@@ -11,6 +11,7 @@ class BlobClient;
 } // namespace Azure
 
 namespace duckdb {
+class HTTPState;
 
 class AzureExtension : public Extension {
 public:
@@ -78,7 +79,6 @@ public:
 	BlobClientWrapper blob_client;
 
 	AzureReadOptions read_options;
-
 };
 
 class AzureStorageFileSystem : public FileSystem {
@@ -112,6 +112,12 @@ public:
 	}
 
 	static void Verify();
+
+public:
+	// guarded global varables are used here to share the http_state when parsing multiple files
+	static mutex azure_log_lock;
+	static weak_ptr<HTTPState> http_state;
+	static bool listener_set;
 
 protected:
 	static AzureParsedUrl ParseUrl(const string &url);
