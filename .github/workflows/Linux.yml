@@ -16,12 +16,10 @@ jobs:
       matrix:
         # Add commits/tags to build against other DuckDB versions
         duckdb_version: [ '<submodule_version>' ]
-        arch: ['linux_amd64', 'linux_arm64', 'linux_amd64_gcc4']
+        arch: ['linux_amd64_gcc4']
         vcpkg_version: [ '2023.04.15' ]
-        include:
-          - arch: 'linux_amd64_gcc4'
-            container: 'quay.io/pypa/manylinux2014_x86_64'
-            vcpkg_triplet: 'x64-linux'
+        container: ['quay.io/pypa/manylinux2014_x86_64']
+        vcpkg_triplet: ['x64-linux']
 
     env:
       VCPKG_TARGET_TRIPLET: ${{ matrix.vcpkg_triplet }}
