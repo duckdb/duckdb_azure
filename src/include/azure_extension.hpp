@@ -11,6 +11,7 @@ class BlobClient;
 } // namespace Azure
 
 namespace duckdb {
+class HTTPState;
 class AzureSecret;
 class KeyValueSecret;
 
@@ -33,6 +34,12 @@ struct AzureAuthentication {
 	string endpoint;
 };
 
+struct AzureReadOptions {
+	int32_t transfer_concurrency = 5;
+	int64_t transfer_chunk_size = 1 * 1024 * 1024;
+	idx_t buffer_size = 1 * 1024 * 1024;
+};
+
 struct AzureParsedUrl {
 	string container;
 	string prefix;
@@ -52,7 +59,7 @@ protected:
 class AzureStorageFileHandle : public FileHandle {
 public:
 	AzureStorageFileHandle(FileSystem &fs, string path, uint8_t flags, AzureAuthentication &auth,
-	                       AzureParsedUrl parsed_url);
+	                       const AzureReadOptions &read_options, AzureParsedUrl parsed_url);
 	~AzureStorageFileHandle() override = default;
 
 public:
@@ -72,10 +79,11 @@ public:
 
 	// Read buffer
 	duckdb::unique_ptr<data_t[]> read_buffer;
-	constexpr static idx_t READ_BUFFER_LEN = 1000000;
 
 	// Azure Blob Client
 	BlobClientWrapper blob_client;
+
+	AzureReadOptions read_options;
 };
 
 class AzureStorageFileSystem : public FileSystem {
@@ -109,6 +117,12 @@ public:
 	}
 
 	static void Verify();
+
+public:
+	// guarded global varables are used here to share the http_state when parsing multiple files
+	static mutex azure_log_lock;
+	static weak_ptr<HTTPState> http_state;
+	static bool listener_set;
 
 protected:
 	static AzureParsedUrl ParseUrl(const string &url);

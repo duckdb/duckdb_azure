@@ -5,6 +5,7 @@
 #include "azure_secret.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/http_state.hpp"
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/main/secret/secret.hpp"
@@ -12,6 +13,10 @@
 #include "duckdb/function/scalar/string_functions.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension_util.hpp"
+#include "duckdb/main/client_data.hpp"
+#include <azure/storage/blobs.hpp>
+#include <azure/core/diagnostics/logger.hpp>
+#include <azure/identity/default_azure_credential.hpp>
 #include <azure/identity/azure_cli_credential.hpp>
 #include <azure/identity/chained_token_credential.hpp>
 #include <azure/identity/default_azure_credential.hpp>
@@ -22,6 +27,32 @@
 #include <iostream>
 
 namespace duckdb {
+
+using namespace Azure::Core::Diagnostics;
+
+mutex AzureStorageFileSystem::azure_log_lock = {};
+weak_ptr<HTTPState> AzureStorageFileSystem::http_state = std::weak_ptr<HTTPState>();
+bool AzureStorageFileSystem::listener_set = false;
+
+// TODO: extract received/sent bytes information
+static void Log(Logger::Level level, std::string const &message) {
+	auto http_state_ptr = AzureStorageFileSystem::http_state;
+	auto http_state = http_state_ptr.lock();
+	if (!http_state) {
+		throw std::runtime_error("HTTP state weak pointer failed to lock");
+	}
+	if (message.find("Request") != std::string::npos) {
+		if (message.find("Request : HEAD") != std::string::npos) {
+			http_state->head_count++;
+		} else if (message.find("Request : GET") != std::string::npos) {
+			http_state->get_count++;
+		} else if (message.find("Request : POST") != std::string::npos) {
+			http_state->post_count++;
+		} else if (message.find("Request : PUT") != std::string::npos) {
+			http_state->put_count++;
+		}
+	}
+}
 
 static Azure::Identity::ChainedTokenCredential::Sources
 CreateCredentialChainFromSetting(const string &credential_chain) {
@@ -83,6 +114,27 @@ static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener, const stri
 	}
 
 	return auth;
+}
+
+static AzureReadOptions ParseAzureReadOptions(FileOpener *opener) {
+	AzureReadOptions options;
+
+	Value concurrency_val;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_read_transfer_concurrency", concurrency_val)) {
+		options.transfer_concurrency = concurrency_val.GetValue<int32_t>();
+	}
+
+	Value chunk_size_val;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_read_transfer_chunk_size", chunk_size_val)) {
+		options.transfer_chunk_size = chunk_size_val.GetValue<int64_t>();
+	}
+
+	Value buffer_size_val;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_read_buffer_size", buffer_size_val)) {
+		options.buffer_size = buffer_size_val.GetValue<idx_t>();
+	}
+
+	return options;
 }
 
 static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthentication &auth, AzureParsedUrl &url) {
@@ -166,9 +218,10 @@ Azure::Storage::Blobs::BlobClient *BlobClientWrapper::GetClient() {
 };
 
 AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, uint8_t flags, AzureAuthentication &auth,
-                                               AzureParsedUrl parsed_url)
+                                               const AzureReadOptions &read_options, AzureParsedUrl parsed_url)
     : FileHandle(fs, std::move(path_p)), flags(flags), length(0), last_modified(time_t()), buffer_available(0),
-      buffer_idx(0), file_offset(0), buffer_start(0), buffer_end(0), blob_client(auth, parsed_url) {
+      buffer_idx(0), file_offset(0), buffer_start(0), buffer_end(0), blob_client(auth, parsed_url),
+      read_options(read_options) {
 	try {
 		auto client = *blob_client.GetClient();
 		auto res = client.GetProperties();
@@ -183,7 +236,7 @@ AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, ui
 	}
 
 	if (flags & FileFlags::FILE_FLAGS_READ) {
-		read_buffer = duckdb::unique_ptr<data_t[]>(new data_t[READ_BUFFER_LEN]);
+		read_buffer = duckdb::unique_ptr<data_t[]>(new data_t[read_options.buffer_size]);
 	}
 }
 
@@ -195,13 +248,35 @@ unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const st
 
 	auto parsed_url = ParseUrl(path);
 	auto azure_auth = ParseAzureAuthSettings(opener, path);
+	auto read_options = ParseAzureReadOptions(opener);
 
-	return make_uniq<AzureStorageFileHandle>(*this, path, flags, azure_auth, parsed_url);
+	return make_uniq<AzureStorageFileHandle>(*this, path, flags, azure_auth, read_options, parsed_url);
 }
 
 unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, uint8_t flags, FileLockType lock,
                                                         FileCompressionType compression, FileOpener *opener) {
 	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
+
+	Value value;
+	bool enable_http_stats = false;
+	auto context = FileOpener::TryGetClientContext(opener);
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_http_stats", value)) {
+		enable_http_stats = value.GetValue<bool>();
+	}
+
+	if (context && enable_http_stats) {
+		unique_lock<mutex> lck(AzureStorageFileSystem::azure_log_lock);
+		if (!context->client_data->http_state) {
+			context->client_data->http_state = make_shared<HTTPState>();
+		}
+		AzureStorageFileSystem::http_state = context->client_data->http_state;
+
+		if (!AzureStorageFileSystem::listener_set) {
+			Logger::SetListener(std::bind(&Log, std::placeholders::_1, std::placeholders::_2));
+			Logger::SetLevel(Logger::Level::Verbose);
+			AzureStorageFileSystem::listener_set = true;
+		}
+	}
 
 	if (flags & FileFlags::FILE_FLAGS_WRITE) {
 		throw NotImplementedException("Writing to Azure containers is currently not supported");
@@ -258,6 +333,28 @@ static void LoadInternal(DatabaseInstance &instance) {
 	config.AddExtensionOption("azure_endpoint",
 	                          "Override the azure endpoint for when the Azure credential providers are used.",
 	                          LogicalType::VARCHAR, "blob.core.windows.net");
+	config.AddExtensionOption("azure_http_stats",
+	                          "Include http info from the Azure Storage in the explain analyze statement. "
+	                          "Notice that the result may be incorrect for more than one active DuckDB connection "
+	                          "and the calculation of total received and sent bytes is not yet implemented.",
+	                          LogicalType::BOOLEAN, false);
+
+	AzureReadOptions default_read_options;
+	config.AddExtensionOption("azure_read_transfer_concurrency",
+	                          "Maximum number of threads the Azure client can use for a single parallel read. "
+	                          "If azure_read_transfer_chunk_size is less than azure_read_buffer_size then setting "
+	                          "this > 1 will allow the Azure client to do concurrent requests to fill the buffer.",
+	                          LogicalType::INTEGER, Value::INTEGER(default_read_options.transfer_concurrency));
+
+	config.AddExtensionOption("azure_read_transfer_chunk_size",
+	                          "Maximum size in bytes that the Azure client will read in a single request. "
+	                          "It is recommended that this is a factor of azure_read_buffer_size.",
+	                          LogicalType::BIGINT, Value::BIGINT(default_read_options.transfer_chunk_size));
+
+	config.AddExtensionOption("azure_read_buffer_size",
+	                          "Size of the read buffer.  It is recommended that this is evenly divisible by "
+	                          "azure_read_transfer_chunk_size.",
+	                          LogicalType::UBIGINT, Value::UBIGINT(default_read_options.buffer_size));
 }
 
 int64_t AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes) {
@@ -386,7 +483,7 @@ void AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_b
 		}
 
 		if (to_read > 0 && hfh.buffer_available == 0) {
-			auto new_buffer_available = MinValue<idx_t>(hfh.READ_BUFFER_LEN, hfh.length - hfh.file_offset);
+			auto new_buffer_available = MinValue<idx_t>(hfh.read_options.buffer_size, hfh.length - hfh.file_offset);
 
 			// Bypass buffer if we read more than buffer size
 			if (to_read > new_buffer_available) {
@@ -431,6 +528,9 @@ void AzureStorageFileSystem::ReadRange(FileHandle &handle, idx_t file_offset, ch
 		range.Length = buffer_out_len;
 		Azure::Storage::Blobs::DownloadBlobToOptions options;
 		options.Range = range;
+		options.TransferOptions.Concurrency = afh.read_options.transfer_concurrency;
+		options.TransferOptions.InitialChunkSize = afh.read_options.transfer_chunk_size;
+		options.TransferOptions.ChunkSize = afh.read_options.transfer_chunk_size;
 		auto res = blob_client.DownloadTo((uint8_t *)buffer_out, buffer_out_len, options);
 
 	} catch (Azure::Storage::StorageException &e) {

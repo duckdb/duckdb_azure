@@ -12,6 +12,10 @@ require-env AZURE_STORAGE_CONNECTION_STRING
 # We need a connection string to do requests
 foreach prefix azure:// az://
 
+# Unset the connection string var
+statement ok
+SET azure_storage_connection_string = '';
+
 statement error
 SELECT sum(l_orderkey) FROM '${prefix}testing-private/l.parquet';
 ----
@@ -38,8 +42,26 @@ SELECT count(*) FROM '${prefix}testing-private/l.csv';
 ----
 60175
 
-# Unset the connection string var
-statement ok
-SET azure_storage_connection_string = '';
-
 endloop
+
+# Enable http info for the explain analyze statement
+statement ok
+SET azure_http_stats = true;
+
+query II
+EXPLAIN ANALYZE SELECT sum(l_orderkey) FROM 'az://testing-private/l.parquet';
+----
+analyzed_plan	<REGEX>:.*HTTP Stats.*\#HEAD\: 2.*GET\: 3.*PUT\: 0.*\#POST\: 0.*
+
+# Redoing query should still result in same request count
+query II
+EXPLAIN ANALYZE SELECT sum(l_orderkey) FROM 'az://testing-private/l.parquet';
+----
+analyzed_plan	<REGEX>:.*HTTP Stats.*\#HEAD\: 2.*GET\: 3.*PUT\: 0.*\#POST\: 0.*
+
+# Testing public blobs
+query II
+EXPLAIN ANALYZE SELECT COUNT(*) FROM "azure://testing-public/l.parquet";
+----
+analyzed_plan	<REGEX>:.*HTTP Stats.*\#HEAD\: 2.*GET\: 2.*PUT\: 0.*\#POST\: 0.*
+
