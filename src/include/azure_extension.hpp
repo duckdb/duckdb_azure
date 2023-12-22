@@ -88,6 +88,8 @@ public:
 
 class AzureStorageFileSystem : public FileSystem {
 public:
+	~AzureStorageFileSystem();
+
 	duckdb::unique_ptr<FileHandle> OpenFile(const string &path, uint8_t flags, FileLockType lock = DEFAULT_LOCK,
 	                                        FileCompressionType compression = DEFAULT_COMPRESSION,
 	                                        FileOpener *opener = nullptr) final;

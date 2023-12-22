@@ -30,6 +30,7 @@ namespace duckdb {
 
 using namespace Azure::Core::Diagnostics;
 
+// globals for collection Azure SDK logging information
 mutex AzureStorageFileSystem::azure_log_lock = {};
 weak_ptr<HTTPState> AzureStorageFileSystem::http_state = std::weak_ptr<HTTPState>();
 bool AzureStorageFileSystem::listener_set = false;
@@ -38,7 +39,7 @@ bool AzureStorageFileSystem::listener_set = false;
 static void Log(Logger::Level level, std::string const &message) {
 	auto http_state_ptr = AzureStorageFileSystem::http_state;
 	auto http_state = http_state_ptr.lock();
-	if (!http_state) {
+	if (!http_state && AzureStorageFileSystem::listener_set) {
 		throw std::runtime_error("HTTP state weak pointer failed to lock");
 	}
 	if (message.find("Request") != std::string::npos) {
@@ -215,7 +216,12 @@ BlobClientWrapper::BlobClientWrapper(AzureAuthentication &auth, AzureParsedUrl &
 BlobClientWrapper::~BlobClientWrapper() = default;
 Azure::Storage::Blobs::BlobClient *BlobClientWrapper::GetClient() {
 	return blob_client.get();
-};
+}
+
+AzureStorageFileSystem::~AzureStorageFileSystem() {
+	Logger::SetListener(nullptr);
+	AzureStorageFileSystem::listener_set = false;
+}
 
 AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, uint8_t flags, AzureAuthentication &auth,
                                                const AzureReadOptions &read_options, AzureParsedUrl parsed_url)
