@@ -12,6 +12,7 @@ class BlobClient;
 
 namespace duckdb {
 class AzureSecret;
+class KeyValueSecret;
 
 class AzureExtension : public Extension {
 public:
@@ -21,7 +22,7 @@ public:
 
 struct AzureAuthentication {
 	//! Main Auth method: through secret
-	shared_ptr<const AzureSecret> secret;
+	optional_ptr <const KeyValueSecret> secret;
 
 	//! Auth method #1: setting the connection string
 	string connection_string;

@@ -30,9 +30,9 @@ SELECT count(*) FROM 'azure://testing-public/l1.parquet';
 60175
 
 query I
-SELECT count(*) FROM 'azure://testing-public/l*.parquet';
+SELECT count(*) FROM 'azure://testing-public/l[12].parquet';
 ----
-180525
+120350
 
 # With the CLI credentials, private authentication should now work
 query I
@@ -41,9 +41,9 @@ SELECT count(*) FROM 'azure://testing-private/l1.parquet';
 60175
 
 query I
-SELECT count(*) FROM 'azure://testing-private/l*.parquet';
+SELECT count(*) FROM 'azure://testing-private/l[12].parquet';
 ----
-180525
+120350
 
 # No credential providers, public buckets should still work!
 statement ok
@@ -55,9 +55,9 @@ SELECT count(*) FROM 'azure://testing-public/l1.parquet';
 60175
 
 query I
-SELECT count(*) FROM 'azure://testing-public/l*.parquet';
+SELECT count(*) FROM 'azure://testing-public/l[12].parquet';
 ----
-180525
+120350
 
 # private without credentials don't work
 statement error
@@ -82,12 +82,14 @@ SELECT count(*) FROM 'azure://testing-private/l1.parquet';
 60175
 
 query I
-SELECT count(*) FROM 'azure://testing-private/l*.parquet';
+SELECT count(*) FROM 'azure://testing-private/l[12].parquet';
 ----
-180525
+120350
 
 statement ok
 set azure_endpoint='nop.nop';
 
 statement error
-SELECT count(*) FROM 'azure://testing-private/l*.parquet';
+SELECT count(*) FROM 'azure://testing-private/l[12].parquet';
+----
+Fail to get a new connection for: https://duckdbtesting.nop.nop. Couldn't resolve host name

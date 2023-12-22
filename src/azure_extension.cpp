@@ -8,6 +8,7 @@
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/main/secret/secret.hpp"
+#include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/function/scalar/string_functions.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension_util.hpp"
@@ -51,9 +52,10 @@ static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener, const stri
 	auto context = opener->TryGetClientContext();
 	if (context) {
 		auto transaction = CatalogTransaction::GetSystemCatalogTransaction(*context);
-		auto secret_entry = context->db->config.secret_manager->GetSecretByPath(transaction, path, "azure");
-		if (secret_entry) {
-			auth.secret = std::dynamic_pointer_cast<const AzureSecret>(secret_entry->secret);
+		auto secret_lookup = context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
+		if (secret_lookup.HasMatch()) {
+			const auto &secret = secret_lookup.GetSecret();
+			auth.secret = &dynamic_cast<const KeyValueSecret&>(secret);
 		}
 	}
 
@@ -84,36 +86,72 @@ static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener, const stri
 }
 
 static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthentication &auth, AzureParsedUrl &url) {
+	string connection_string;
+	bool use_secret = false;
+	string chain;
+	string account_name;
+	string endpoint;
+
 	// Firstly, try to use the auth from the secret
 	if (auth.secret) {
-		auto secret_client = auth.secret->GetContainerClient(url);
-		if (secret_client) {
-			return *secret_client;
+		// If connection string, we're done heres
+		auto connection_string_value =  auth.secret->TryGetValue("connection_string");
+		if (!connection_string_value.IsNull()) {
+			return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(connection_string_value.ToString(),
+				                                                                              url.container);
+		}
+
+		// Account_name can be used both for unauthenticated
+		if (!auth.secret->TryGetValue("account_name").IsNull()) {
+			use_secret = true;
+			account_name = auth.secret->TryGetValue("account_name").ToString();
+		}
+
+		if (auth.secret->GetProvider() == "credential_chain") {
+			use_secret = true;
+			if (!auth.secret->TryGetValue("chain").IsNull()) {
+				chain = auth.secret->TryGetValue("chain").ToString();
+			}
+			if (chain.empty()) {
+				chain = "default";
+			}
+			if (!auth.secret->TryGetValue("endpoint").IsNull()) {
+				endpoint = auth.secret->TryGetValue("endpoint").ToString();
+			}
 		}
 	}
 
-	if (!auth.connection_string.empty()) {
-		return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(auth.connection_string,
-		                                                                              url.container);
+	if (!use_secret) {
+		chain = auth.credential_chain;
+		account_name = auth.account_name;
+		endpoint = auth.endpoint;
+
+		if (!auth.connection_string.empty()) {
+			return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(auth.connection_string,
+			                                                                              url.container);
+		}
+	}
+
+	if (endpoint.empty()) {
+		endpoint = "blob.core.windows.net";
 	}
 
 	// Build credential chain, from last to first
 	Azure::Identity::ChainedTokenCredential::Sources credential_chain;
-	if (!auth.credential_chain.empty()) {
-		credential_chain = CreateCredentialChainFromSetting(auth.credential_chain);
+	if (!chain.empty()) {
+		credential_chain = CreateCredentialChainFromSetting(chain);
 	}
 
-	auto accountURL = "https://" + auth.account_name + "." + auth.endpoint;
+	auto accountURL = "https://" + account_name + "." + endpoint;
 	if (!credential_chain.empty()) {
 		// A set of credentials providers was passed
 		auto chainedTokenCredential = std::make_shared<Azure::Identity::ChainedTokenCredential>(credential_chain);
 		Azure::Storage::Blobs::BlobServiceClient blob_service_client(accountURL, chainedTokenCredential);
 		return blob_service_client.GetBlobContainerClient(url.container);
-	} else if (!auth.account_name.empty()) {
+	} else if (!account_name.empty()) {
 		return Azure::Storage::Blobs::BlobContainerClient(accountURL + "/" + url.container);
 	} else {
-		throw InvalidInputException(
-		    "No valid Azure credentials found, use either the azure_connection_string or azure_account_name");
+		throw InvalidInputException("No valid Azure credentials found!");
 	}
 }
 
@@ -138,6 +176,8 @@ AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, ui
 	} catch (Azure::Storage::StorageException &e) {
 		throw IOException("AzureStorageFileSystem open file '" + path + "' failed with code'" + e.ErrorCode +
 		                  "',Reason Phrase: '" + e.ReasonPhrase + "', Message: '" + e.Message + "'");
+	} catch (std::exception &e) {
+		throw IOException("AzureStorageFileSystem could not open file: '%s', unknown error occured, this could mean the credentials used were wrong. Original error message: '%s' ", path, e.what());
 	}
 
 	if (flags & FileFlags::FILE_FLAGS_READ) {

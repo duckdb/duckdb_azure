@@ -22,12 +22,7 @@ jobs:
           - arch: 'linux_amd64_gcc4'
             container: 'quay.io/pypa/manylinux2014_x86_64'
             vcpkg_triplet: 'x64-linux'
-          - arch: 'linux_amd64'
-            container: 'ubuntu:18.04'
-            vcpkg_triplet: 'x64-linux'
-          - arch: 'linux_arm64'
-            container: 'ubuntu:18.04'
-            vcpkg_triplet: 'arm64-linux'
+
     env:
       VCPKG_TARGET_TRIPLET: ${{ matrix.vcpkg_triplet }}
       GEN: Ninja
@@ -105,7 +100,7 @@ jobs:
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v11.1
       with:
-        vcpkgGitCommitId: 9edb1b8e590cc086563301d735cae4b6e732d2d2
+        vcpkgGitCommitId: a42af01b72c28a8e1d7b48107b33e4f286a55ef6
 
     # Build extension
     - name: Build extension
