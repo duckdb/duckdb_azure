@@ -45,7 +45,7 @@ CreateCredentialChainFromSetting(const string &credential_chain) {
 	return result;
 }
 
-static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener, const string& path) {
+static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener, const string &path) {
 	AzureAuthentication auth;
 
 	// Lookup Secret
@@ -55,7 +55,7 @@ static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener, const stri
 		auto secret_lookup = context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
 		if (secret_lookup.HasMatch()) {
 			const auto &secret = secret_lookup.GetSecret();
-			auth.secret = &dynamic_cast<const KeyValueSecret&>(secret);
+			auth.secret = &dynamic_cast<const KeyValueSecret &>(secret);
 		}
 	}
 
@@ -95,10 +95,10 @@ static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthen
 	// Firstly, try to use the auth from the secret
 	if (auth.secret) {
 		// If connection string, we're done heres
-		auto connection_string_value =  auth.secret->TryGetValue("connection_string");
+		auto connection_string_value = auth.secret->TryGetValue("connection_string");
 		if (!connection_string_value.IsNull()) {
-			return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(connection_string_value.ToString(),
-				                                                                              url.container);
+			return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(
+			    connection_string_value.ToString(), url.container);
 		}
 
 		// Account_name can be used both for unauthenticated
@@ -177,7 +177,9 @@ AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, ui
 		throw IOException("AzureStorageFileSystem open file '" + path + "' failed with code'" + e.ErrorCode +
 		                  "',Reason Phrase: '" + e.ReasonPhrase + "', Message: '" + e.Message + "'");
 	} catch (std::exception &e) {
-		throw IOException("AzureStorageFileSystem could not open file: '%s', unknown error occured, this could mean the credentials used were wrong. Original error message: '%s' ", path, e.what());
+		throw IOException("AzureStorageFileSystem could not open file: '%s', unknown error occured, this could mean "
+		                  "the credentials used were wrong. Original error message: '%s' ",
+		                  path, e.what());
 	}
 
 	if (flags & FileFlags::FILE_FLAGS_READ) {

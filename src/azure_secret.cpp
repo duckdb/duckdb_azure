@@ -95,8 +95,6 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	cred_chain_function.named_parameters["account_name"] = LogicalType::VARCHAR;
 	cred_chain_function.named_parameters["azure_endpoint"] = LogicalType::VARCHAR;
 	ExtensionUtil::RegisterFunction(instance, cred_chain_function);
-
-
 }
 
 } // namespace duckdb

@@ -22,7 +22,7 @@ public:
 
 struct AzureAuthentication {
 	//! Main Auth method: through secret
-	optional_ptr <const KeyValueSecret> secret;
+	optional_ptr<const KeyValueSecret> secret;
 
 	//! Auth method #1: setting the connection string
 	string connection_string;
