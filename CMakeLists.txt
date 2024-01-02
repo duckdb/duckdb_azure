@@ -10,7 +10,7 @@ include_directories(src/include)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-set(EXTENSION_SOURCES src/azure_extension.cpp)
+set(EXTENSION_SOURCES src/azure_extension.cpp src/azure_secret.cpp)
 add_library(${EXTENSION_NAME} STATIC ${EXTENSION_SOURCES})
 
 set(PARAMETERS "-warnings")

@@ -12,6 +12,8 @@ class BlobClient;
 
 namespace duckdb {
 class HTTPState;
+class AzureSecret;
+class KeyValueSecret;
 
 class AzureExtension : public Extension {
 public:
@@ -20,6 +22,9 @@ public:
 };
 
 struct AzureAuthentication {
+	//! Main Auth method: through secret
+	optional_ptr<const KeyValueSecret> secret;
+
 	//! Auth method #1: setting the connection string
 	string connection_string;
 
@@ -83,6 +88,8 @@ public:
 
 class AzureStorageFileSystem : public FileSystem {
 public:
+	~AzureStorageFileSystem();
+
 	duckdb::unique_ptr<FileHandle> OpenFile(const string &path, uint8_t flags, FileLockType lock = DEFAULT_LOCK,
 	                                        FileCompressionType compression = DEFAULT_COMPRESSION,
 	                                        FileOpener *opener = nullptr) final;

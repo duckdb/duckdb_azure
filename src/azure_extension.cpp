@@ -2,11 +2,14 @@
 
 #include "azure_extension.hpp"
 
+#include "azure_secret.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/http_state.hpp"
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/main/secret/secret.hpp"
+#include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/function/scalar/string_functions.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension_util.hpp"
@@ -14,10 +17,12 @@
 #include <azure/storage/blobs.hpp>
 #include <azure/core/diagnostics/logger.hpp>
 #include <azure/identity/default_azure_credential.hpp>
+#include <azure/identity/azure_cli_credential.hpp>
 #include <azure/identity/chained_token_credential.hpp>
+#include <azure/identity/default_azure_credential.hpp>
 #include <azure/identity/environment_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
-#include <azure/identity/azure_cli_credential.hpp>
+#include <azure/storage/blobs.hpp>
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include <iostream>
 
@@ -25,6 +30,7 @@ namespace duckdb {
 
 using namespace Azure::Core::Diagnostics;
 
+// globals for collection Azure SDK logging information
 mutex AzureStorageFileSystem::azure_log_lock = {};
 weak_ptr<HTTPState> AzureStorageFileSystem::http_state = std::weak_ptr<HTTPState>();
 bool AzureStorageFileSystem::listener_set = false;
@@ -33,7 +39,7 @@ bool AzureStorageFileSystem::listener_set = false;
 static void Log(Logger::Level level, std::string const &message) {
 	auto http_state_ptr = AzureStorageFileSystem::http_state;
 	auto http_state = http_state_ptr.lock();
-	if (!http_state) {
+	if (!http_state && AzureStorageFileSystem::listener_set) {
 		throw std::runtime_error("HTTP state weak pointer failed to lock");
 	}
 	if (message.find("Request") != std::string::npos) {
@@ -71,8 +77,19 @@ CreateCredentialChainFromSetting(const string &credential_chain) {
 	return result;
 }
 
-static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener) {
+static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener, const string &path) {
 	AzureAuthentication auth;
+
+	// Lookup Secret
+	auto context = opener->TryGetClientContext();
+	if (context) {
+		auto transaction = CatalogTransaction::GetSystemCatalogTransaction(*context);
+		auto secret_lookup = context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
+		if (secret_lookup.HasMatch()) {
+			const auto &secret = secret_lookup.GetSecret();
+			auth.secret = &dynamic_cast<const KeyValueSecret &>(secret);
+		}
+	}
 
 	Value connection_string_val;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_storage_connection_string", connection_string_val)) {
@@ -122,28 +139,72 @@ static AzureReadOptions ParseAzureReadOptions(FileOpener *opener) {
 }
 
 static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthentication &auth, AzureParsedUrl &url) {
-	if (!auth.connection_string.empty()) {
-		return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(auth.connection_string,
-		                                                                              url.container);
+	string connection_string;
+	bool use_secret = false;
+	string chain;
+	string account_name;
+	string endpoint;
+
+	// Firstly, try to use the auth from the secret
+	if (auth.secret) {
+		// If connection string, we're done heres
+		auto connection_string_value = auth.secret->TryGetValue("connection_string");
+		if (!connection_string_value.IsNull()) {
+			return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(
+			    connection_string_value.ToString(), url.container);
+		}
+
+		// Account_name can be used both for unauthenticated
+		if (!auth.secret->TryGetValue("account_name").IsNull()) {
+			use_secret = true;
+			account_name = auth.secret->TryGetValue("account_name").ToString();
+		}
+
+		if (auth.secret->GetProvider() == "credential_chain") {
+			use_secret = true;
+			if (!auth.secret->TryGetValue("chain").IsNull()) {
+				chain = auth.secret->TryGetValue("chain").ToString();
+			}
+			if (chain.empty()) {
+				chain = "default";
+			}
+			if (!auth.secret->TryGetValue("endpoint").IsNull()) {
+				endpoint = auth.secret->TryGetValue("endpoint").ToString();
+			}
+		}
+	}
+
+	if (!use_secret) {
+		chain = auth.credential_chain;
+		account_name = auth.account_name;
+		endpoint = auth.endpoint;
+
+		if (!auth.connection_string.empty()) {
+			return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(auth.connection_string,
+			                                                                              url.container);
+		}
+	}
+
+	if (endpoint.empty()) {
+		endpoint = "blob.core.windows.net";
 	}
 
 	// Build credential chain, from last to first
 	Azure::Identity::ChainedTokenCredential::Sources credential_chain;
-	if (!auth.credential_chain.empty()) {
-		credential_chain = CreateCredentialChainFromSetting(auth.credential_chain);
+	if (!chain.empty()) {
+		credential_chain = CreateCredentialChainFromSetting(chain);
 	}
 
-	auto accountURL = "https://" + auth.account_name + "." + auth.endpoint;
+	auto accountURL = "https://" + account_name + "." + endpoint;
 	if (!credential_chain.empty()) {
 		// A set of credentials providers was passed
 		auto chainedTokenCredential = std::make_shared<Azure::Identity::ChainedTokenCredential>(credential_chain);
 		Azure::Storage::Blobs::BlobServiceClient blob_service_client(accountURL, chainedTokenCredential);
 		return blob_service_client.GetBlobContainerClient(url.container);
-	} else if (!auth.account_name.empty()) {
+	} else if (!account_name.empty()) {
 		return Azure::Storage::Blobs::BlobContainerClient(accountURL + "/" + url.container);
 	} else {
-		throw InvalidInputException(
-		    "No valid Azure credentials found, use either the azure_connection_string or azure_account_name");
+		throw InvalidInputException("No valid Azure credentials found!");
 	}
 }
 
@@ -155,7 +216,12 @@ BlobClientWrapper::BlobClientWrapper(AzureAuthentication &auth, AzureParsedUrl &
 BlobClientWrapper::~BlobClientWrapper() = default;
 Azure::Storage::Blobs::BlobClient *BlobClientWrapper::GetClient() {
 	return blob_client.get();
-};
+}
+
+AzureStorageFileSystem::~AzureStorageFileSystem() {
+	Logger::SetListener(nullptr);
+	AzureStorageFileSystem::listener_set = false;
+}
 
 AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, uint8_t flags, AzureAuthentication &auth,
                                                const AzureReadOptions &read_options, AzureParsedUrl parsed_url)
@@ -169,6 +235,10 @@ AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, ui
 	} catch (Azure::Storage::StorageException &e) {
 		throw IOException("AzureStorageFileSystem open file '" + path + "' failed with code'" + e.ErrorCode +
 		                  "',Reason Phrase: '" + e.ReasonPhrase + "', Message: '" + e.Message + "'");
+	} catch (std::exception &e) {
+		throw IOException("AzureStorageFileSystem could not open file: '%s', unknown error occured, this could mean "
+		                  "the credentials used were wrong. Original error message: '%s' ",
+		                  path, e.what());
 	}
 
 	if (flags & FileFlags::FILE_FLAGS_READ) {
@@ -183,7 +253,7 @@ unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const st
 	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
 
 	auto parsed_url = ParseUrl(path);
-	auto azure_auth = ParseAzureAuthSettings(opener);
+	auto azure_auth = ParseAzureAuthSettings(opener, path);
 	auto read_options = ParseAzureReadOptions(opener);
 
 	return make_uniq<AzureStorageFileHandle>(*this, path, flags, azure_auth, read_options, parsed_url);
@@ -249,6 +319,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 	// Load filesystem
 	auto &fs = instance.GetFileSystem();
 	fs.RegisterSubSystem(make_uniq<AzureStorageFileSystem>());
+
+	// Load Secret functions
+	CreateAzureSecretFunctions::Register(instance);
 
 	// Load extension config
 	auto &config = DBConfig::GetConfig(instance);
@@ -329,7 +402,7 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 		throw InternalException("Cannot do Azure storage Glob without FileOpener");
 	}
 	auto azure_url = AzureStorageFileSystem::ParseUrl(path);
-	auto azure_auth = ParseAzureAuthSettings(opener);
+	auto azure_auth = ParseAzureAuthSettings(opener, path);
 
 	// Azure matches on prefix, not glob pattern, so we take a substring until the first wildcard
 	auto first_wildcard_pos = azure_url.path.find_first_of("*[\\");

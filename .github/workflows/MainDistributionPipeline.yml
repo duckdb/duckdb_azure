@@ -14,11 +14,11 @@ concurrency:
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
-    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@v0.9.2
+    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@a491470b039c54fe2f0adfe1d161b14c7fe64642
     with:
-      duckdb_version: v0.9.2
       extension_name: azure
-      vcpkg_commit: 9edb1b8e590cc086563301d735cae4b6e732d2d2 # TODO: remove pinned vcpkg commit when updating duckdb version
+      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads' # Can't really work in wasm sandbox
+      duckdb_version: a491470b03
 
   duckdb-stable-deploy:
     name: Deploy extension binaries
@@ -26,6 +26,7 @@ jobs:
     uses: ./.github/workflows/_extension_deploy.yml
     secrets: inherit
     with:
-      duckdb_version: v0.9.2
       extension_name: azure
+      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads'
+      duckdb_version: a491470b03
       deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
