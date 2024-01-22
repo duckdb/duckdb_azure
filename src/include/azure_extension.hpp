@@ -21,12 +21,19 @@ public:
 	std::string Name() override;
 };
 
+struct AzureProxyOptions {
+	string http_proxy;
+	string user_name;
+	string password;
+};
+
 struct AzureAuthentication {
 	//! Main Auth method: through secret
 	optional_ptr<const KeyValueSecret> secret;
 
 	//! Auth method #1: setting the connection string
 	string connection_string;
+	AzureProxyOptions proxy_options;
 
 	//! Auth method #2: setting account name + defining a credential chain.
 	string account_name;
