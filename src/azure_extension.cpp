@@ -57,7 +57,8 @@ static void Log(Logger::Level level, std::string const &message) {
 }
 
 static Azure::Identity::ChainedTokenCredential::Sources
-CreateCredentialChainFromSetting(const string &credential_chain, const Azure::Core::Http::Policies::TransportOptions &transport_options) {
+CreateCredentialChainFromSetting(const string &credential_chain,
+                                 const Azure::Core::Http::Policies::TransportOptions &transport_options) {
 	auto chain_list = StringUtil::Split(credential_chain, ';');
 	Azure::Identity::ChainedTokenCredential::Sources result;
 
