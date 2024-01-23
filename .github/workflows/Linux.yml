@@ -56,7 +56,8 @@ jobs:
     - name: install Azure test service
       if: ${{ matrix.arch == 'linux_amd64_gcc4' }}
       run: |
-        yum install -y nodejs npm
+        yum install -y nodejs npm python3-pip
+        pip3 install px-proxy==0.8.4
         npm install -g azurite
         echo -e "[azure-cli]\nname=Azure CLI\nbaseurl=https://packages.microsoft.com/yumrepos/azure-cli\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" | tee /etc/yum.repos.d/azure-cli.repo
         yum install -y azure-cli
@@ -65,16 +66,19 @@ jobs:
       if: ${{ matrix.arch == 'linux_amd64' }}
       run: |
         curl -fsSL https://deb.nodesource.com/setup_16.x | bash
-        apt-get install -y -qq nodejs
+        apt-get install -y -qq nodejs python3-pip
         node -v 
         npm -v
+        pip3 --version
         npm install -g azurite
+        pip3 install px-proxy==0.8.4
         curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 
     - name: Launch & populate Azure test service
       if: ${{ matrix.arch == 'linux_amd64' || matrix.arch == 'linux_amd64_gcc4' }}
       run: |
         azurite > azurite_log.txt 2>&1 &
+        px --workers=1 --threads=1 --listen=127.0.0.1 --port=3128 --foreground --verbose --debug > pxproxy.log 2>&1 &
         sleep 10
         ./scripts/upload_test_files_to_azurite.sh
 
