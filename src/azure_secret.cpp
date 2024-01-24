@@ -99,7 +99,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 	return std::move(result);
 }
 
-static void RegisterCommonSecretParameters(CreateSecretFunction& function) {
+static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
 	// Register azure common parameters
 	function.named_parameters["account_name"] = LogicalType::VARCHAR;
 

@@ -62,7 +62,7 @@ jobs:
           brew install squid
           npm install -g azurite
           ./scripts/run_squid.sh 3128 >squid.log 2>&1 &
-          ./scripts/run_squid.sh 3129 >squid_auth.log 2>&1 &
+          ./scripts/run_squid.sh 3129 auth >squid_auth.log 2>&1 &
           azurite > azurite_log.txt 2>&1 &
           sleep 10
           ./scripts/upload_test_files_to_azurite.sh

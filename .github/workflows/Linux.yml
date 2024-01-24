@@ -77,7 +77,7 @@ jobs:
       run: |
         azurite > azurite_log.txt 2>&1 &
         ./scripts/run_squid.sh 3128 >squid.log 2>&1 &
-        ./scripts/run_squid.sh 3129 >squid_auth.log 2>&1 &
+        ./scripts/run_squid.sh 3129 auth >squid_auth.log 2>&1 &
         sleep 10
         ./scripts/upload_test_files_to_azurite.sh
 
@@ -126,7 +126,7 @@ jobs:
       run: |
         echo "## azurite"
         cat azurite_log.txt
-        
+
         echo "## squid"
         cat squid.log
 
