@@ -99,6 +99,16 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 	return std::move(result);
 }
 
+static void RegisterCommonSecretParameters(CreateSecretFunction& function) {
+	// Register azure common parameters
+	function.named_parameters["account_name"] = LogicalType::VARCHAR;
+
+	// Register proxy parameters
+	function.named_parameters["http_proxy"] = LogicalType::VARCHAR;
+	function.named_parameters["proxy_user_name"] = LogicalType::VARCHAR;
+	function.named_parameters["proxy_password"] = LogicalType::VARCHAR;
+}
+
 void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	string type = "azure";
 
@@ -112,22 +122,14 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	// Register the connection string secret provider
 	CreateSecretFunction connection_string_function = {type, "config", CreateAzureSecretFromConfig};
 	connection_string_function.named_parameters["connection_string"] = LogicalType::VARCHAR;
-	connection_string_function.named_parameters["account_name"] = LogicalType::VARCHAR;
-	// Register proxy parameters
-	connection_string_function.named_parameters["http_proxy"] = LogicalType::VARCHAR;
-	connection_string_function.named_parameters["proxy_user_name"] = LogicalType::VARCHAR;
-	connection_string_function.named_parameters["proxy_password"] = LogicalType::VARCHAR;
+	RegisterCommonSecretParameters(connection_string_function);
 	ExtensionUtil::RegisterFunction(instance, connection_string_function);
 
 	// Register the credential_chain secret provider
 	CreateSecretFunction cred_chain_function = {type, "credential_chain", CreateAzureSecretFromCredentialChain};
 	cred_chain_function.named_parameters["chain"] = LogicalType::VARCHAR;
-	cred_chain_function.named_parameters["account_name"] = LogicalType::VARCHAR;
 	cred_chain_function.named_parameters["azure_endpoint"] = LogicalType::VARCHAR;
-	// Register proxy parameters
-	cred_chain_function.named_parameters["http_proxy"] = LogicalType::VARCHAR;
-	cred_chain_function.named_parameters["proxy_user_name"] = LogicalType::VARCHAR;
-	cred_chain_function.named_parameters["proxy_password"] = LogicalType::VARCHAR;
+	RegisterCommonSecretParameters(cred_chain_function);
 	ExtensionUtil::RegisterFunction(instance, cred_chain_function);
 }
 
