@@ -76,8 +76,8 @@ jobs:
       if: ${{ matrix.arch == 'linux_amd64' || matrix.arch == 'linux_amd64_gcc4' }}
       run: |
         azurite > azurite_log.txt 2>&1 &
-        ./scripts/run_squid.sh 3128 >squid.log 2>&1 &
-        ./scripts/run_squid.sh 3129 auth >squid_auth.log 2>&1 &
+        ./scripts/run_squid.sh --port 3128 --log_dir squid_logs &
+        ./scripts/run_squid.sh --port 3129 --log_dir squid_auth_logs --auth &
         sleep 10
         ./scripts/upload_test_files_to_azurite.sh
 
@@ -128,7 +128,7 @@ jobs:
         cat azurite_log.txt
 
         echo "## squid"
-        cat squid.log
+        cat squid_logs/*
 
-        echo "## squid with auth"
-        cat squid_auth.log
+        echo "## squid auth"
+        cat squid_auth_logs/*

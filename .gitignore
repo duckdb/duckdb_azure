@@ -14,8 +14,9 @@ __queuestorage__/
 __azurite_db_*__.json
 
 # squid
+squid_logs
 squid_users
 squid.pid
 squid.pid
 squid.conf
-squidauth.conf
+squid_auth.conf

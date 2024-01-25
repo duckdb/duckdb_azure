@@ -1,34 +1,70 @@
 #!/bin/bash
 
-if [[ "${1}" == '-h' ]] || [[ "${1}" == '--help' ]]; then
+help() {
     echo "Usage: ${0} [port] [auth]"
     echo "  port    Port number for squid to lisen to (by default 3128)"
     echo "  auth    Optional string ('auth') to force user basic authentification (autherwise no authentification is required)"
     exit 0
-fi
+}
 
-conf_file="squid${2:-}.conf"
+port='3128'
+auth='false'
+log_dir="squid_logs"
+conf_file="squid.conf"
 
-echo "http_port 127.0.0.1:${1:-3128}"            >"${conf_file}"
-echo 'pid_filename ${service_name}.pid'         >>"${conf_file}"
+while [[ $# -gt 0 ]]; do
+  case "${1}" in
+    -h|--help)
+      help
+      ;;
+    -p|--port)
+      port="${2}"
+      shift # past argument
+      shift # past value
+      ;;
+    --auth)
+      auth='true'
+      conf_file="squid_auth.conf"
+      shift # past argument
+      ;;
+    --log_dir)
+      log_dir="${2}"
+      shift # past argument
+      shift # past value
+      ;;
+    *)
+      echo "Unknown option ${1}"
+      exit 1
+      ;;
+  esac
+done
 
-echo '# Send Logs to stdout'                    >>"${conf_file}"
-echo 'logfile_rotate 0'                         >>"${conf_file}"
-echo 'logfile_daemon stdio:/dev/stdout'         >>"${conf_file}"
-echo 'access_log stdio:/dev/stdout'             >>"${conf_file}"
-echo 'cache_log stdio:/dev/stdout'              >>"${conf_file}"
-echo 'cache_store_log stdio:/dev/stdout'        >>"${conf_file}"
+
+mkdir "${log_dir}"
+
+echo "http_port 127.0.0.1:${port}"                  >"${conf_file}"
+echo 'pid_filename ${service_name}.pid'            >>"${conf_file}"
+
+echo 'logfile_rotate 0'                            >>"${conf_file}"
+echo "logfile_daemon ${log_dir}/daemon.log"        >>"${conf_file}"
+echo "access_log ${log_dir}/access.log"            >>"${conf_file}"
+echo "cache_log ${log_dir}/cache.log"              >>"${conf_file}"
+echo "cache_store_log ${log_dir}/cache_store.log"  >>"${conf_file}"
 
 
-if [[ "${2}" == "auth" ]]; then
+if [[ "${auth}" == "true" ]]; then
     # User 'john' with password 'doe'
     echo 'john:$apr1$dalj9e7s$AhqY28Hvl3EcNblNJMiXa0' >squid_users
 
+    squid_version="$(squid --version | head -n1 | grep -o 'Version [^ ]*' | cut -d ' ' -f 2)"
     if [[ "$(uname)" == "Darwin" ]]; then
-        squid_version="$(squid --version | head -n1 | grep -o 'Version [^ ]*' | cut -d ' ' -f 2)"
         auth_basic_program="/usr/local/Cellar/squid/${squid_version}/libexec/basic_ncsa_auth"
     else
-        auth_basic_program="/usr/lib/squid/basic_ncsa_auth"
+        if [[ "$(echo ${squid_version} | cut -d '.' -f 1)" == '3' ]]; then
+            auth_basic_program="/usr/lib/squid3/basic_ncsa_auth"
+        else
+            auth_basic_program="/usr/lib/squid/basic_ncsa_auth"
+        fi
     fi
 
     echo '# Add authentification options'       >>"${conf_file}"
@@ -42,6 +78,4 @@ else
     echo 'http_access allow localhost'          >>"${conf_file}"
 fi
 
-cat "${conf_file}"
-
-exec squid -N -f "${conf_file}" 
+exec squid -N -f "${conf_file}"
