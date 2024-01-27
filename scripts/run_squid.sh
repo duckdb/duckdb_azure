@@ -11,6 +11,7 @@ port='3128'
 auth='false'
 log_dir="squid_logs"
 conf_file="squid.conf"
+pid_file='${service_name}.pid'
 
 while [[ $# -gt 0 ]]; do
   case "${1}" in
@@ -25,6 +26,7 @@ while [[ $# -gt 0 ]]; do
     --auth)
       auth='true'
       conf_file="squid_auth.conf"
+      pid_file='${service_name}_auth.pid'
       shift # past argument
       ;;
     --log_dir)
@@ -39,11 +41,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-
 mkdir "${log_dir}"
+touch "${log_dir}/daemon.log"
+chmod -R 777 "${log_dir}"
 
 echo "http_port 127.0.0.1:${port}"                  >"${conf_file}"
-echo 'pid_filename ${service_name}.pid'            >>"${conf_file}"
+echo "pid_filename ${pid_file}"                    >>"${conf_file}"
 
 echo 'logfile_rotate 0'                            >>"${conf_file}"
 echo "logfile_daemon ${log_dir}/daemon.log"        >>"${conf_file}"
@@ -56,12 +59,12 @@ if [[ "${auth}" == "true" ]]; then
     # User 'john' with password 'doe'
     echo 'john:$apr1$dalj9e7s$AhqY28Hvl3EcNblNJMiXa0' >squid_users
 
-    squid_version="$(squid --version | head -n1 | grep -o 'Version [^ ]*' | cut -d ' ' -f 2)"
+    squid_version="$(squid -v | head -n1 | grep -o 'Version [^ ]*' | cut -d ' ' -f 2)"
     if [[ "$(uname)" == "Darwin" ]]; then
         auth_basic_program="/usr/local/Cellar/squid/${squid_version}/libexec/basic_ncsa_auth"
     else
-        if [[ "$(echo ${squid_version} | cut -d '.' -f 1)" == '3' ]]; then
-            auth_basic_program="/usr/lib/squid3/basic_ncsa_auth"
+        if [[ -e '/usr/lib64/squid/basic_ncsa_auth' ]]; then
+            auth_basic_program="/usr/lib64/squid/basic_ncsa_auth"
         else
             auth_basic_program="/usr/lib/squid/basic_ncsa_auth"
         fi
