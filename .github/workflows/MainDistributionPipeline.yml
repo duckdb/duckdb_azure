@@ -14,7 +14,7 @@ concurrency:
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
-    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@a491470b039c54fe2f0adfe1d161b14c7fe64642
+    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@5abd3edc2dc60f95d1fa62adbd8e86ae0ea456dd
     with:
       extension_name: azure
       exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads' # Can't really work in wasm sandbox
