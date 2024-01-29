@@ -26,6 +26,7 @@ jobs:
       GEN: Ninja
       VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
       AZURE_STORAGE_CONNECTION_STRING: 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;'
+      HTTP_PROXY_RUNNING: '1'
 
     steps:
     - name: Install required ubuntu packages
@@ -56,7 +57,7 @@ jobs:
     - name: install Azure test service
       if: ${{ matrix.arch == 'linux_amd64_gcc4' }}
       run: |
-        yum install -y nodejs npm
+        yum install -y nodejs npm squid
         npm install -g azurite
         echo -e "[azure-cli]\nname=Azure CLI\nbaseurl=https://packages.microsoft.com/yumrepos/azure-cli\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" | tee /etc/yum.repos.d/azure-cli.repo
         yum install -y azure-cli
@@ -65,9 +66,10 @@ jobs:
       if: ${{ matrix.arch == 'linux_amd64' }}
       run: |
         curl -fsSL https://deb.nodesource.com/setup_16.x | bash
-        apt-get install -y -qq nodejs
+        apt-get install -y -qq nodejs squid
         node -v 
         npm -v
+        squid --version
         npm install -g azurite
         curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 
@@ -75,6 +77,8 @@ jobs:
       if: ${{ matrix.arch == 'linux_amd64' || matrix.arch == 'linux_amd64_gcc4' }}
       run: |
         azurite > azurite_log.txt 2>&1 &
+        ./scripts/run_squid.sh --port 3128 --log_dir squid_logs &
+        ./scripts/run_squid.sh --port 3129 --log_dir squid_auth_logs --auth &
         sleep 10
         ./scripts/upload_test_files_to_azurite.sh
 
@@ -121,4 +125,11 @@ jobs:
       if: always() && matrix.arch == 'linux_amd64_gcc4'
       shell: bash
       run: |
+        echo "## azurite"
         cat azurite_log.txt
+
+        echo "## squid"
+        cat squid_logs/*
+
+        echo "## squid auth"
+        cat squid_auth_logs/*

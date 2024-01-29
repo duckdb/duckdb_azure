@@ -1,8 +1,22 @@
 build
 .idea
+.vscode
 cmake-build-debug
 duckdb_unittest_tempdir/
 .DS_Store
 testext
 test/python/__pycache__/
 .Rhistory
+
+# Azurite
+__blobstorage__/
+__queuestorage__/
+__azurite_db_*__.json
+
+# squid
+squid_logs
+squid_users
+squid.pid
+squid.pid
+squid.conf
+squid_auth.conf

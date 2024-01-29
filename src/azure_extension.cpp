@@ -25,6 +25,7 @@
 #include <azure/storage/blobs.hpp>
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 #include <iostream>
+#include <cstdlib>
 
 namespace duckdb {
 
@@ -56,19 +57,22 @@ static void Log(Logger::Level level, std::string const &message) {
 }
 
 static Azure::Identity::ChainedTokenCredential::Sources
-CreateCredentialChainFromSetting(const string &credential_chain) {
+CreateCredentialChainFromSetting(const string &credential_chain,
+                                 const Azure::Core::Http::Policies::TransportOptions &transport_options) {
 	auto chain_list = StringUtil::Split(credential_chain, ';');
 	Azure::Identity::ChainedTokenCredential::Sources result;
 
+	Azure::Core::Credentials::TokenCredentialOptions options;
+	options.Transport = transport_options;
 	for (const auto &item : chain_list) {
 		if (item == "cli") {
-			result.push_back(std::make_shared<Azure::Identity::AzureCliCredential>());
+			result.push_back(std::make_shared<Azure::Identity::AzureCliCredential>(options));
 		} else if (item == "managed_identity") {
-			result.push_back(std::make_shared<Azure::Identity::ManagedIdentityCredential>());
+			result.push_back(std::make_shared<Azure::Identity::ManagedIdentityCredential>(options));
 		} else if (item == "env") {
-			result.push_back(std::make_shared<Azure::Identity::EnvironmentCredential>());
+			result.push_back(std::make_shared<Azure::Identity::EnvironmentCredential>(options));
 		} else if (item == "default") {
-			result.push_back(std::make_shared<Azure::Identity::DefaultAzureCredential>());
+			result.push_back(std::make_shared<Azure::Identity::DefaultAzureCredential>(options));
 		} else if (item != "none") {
 			throw InvalidInputException("Unknown credential provider found: " + item);
 		}
@@ -114,6 +118,22 @@ static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener, const stri
 		}
 	}
 
+	// Load proxy options
+	Value http_proxy;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_http_proxy", http_proxy)) {
+		auth.proxy_options.http_proxy = http_proxy.ToString();
+	}
+
+	Value http_proxy_user_name;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_proxy_user_name", http_proxy_user_name)) {
+		auth.proxy_options.user_name = http_proxy_user_name.ToString();
+	}
+
+	Value http_proxy_password;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_proxy_password", http_proxy_password)) {
+		auth.proxy_options.password = http_proxy_password.ToString();
+	}
+
 	return auth;
 }
 
@@ -138,6 +158,47 @@ static AzureReadOptions ParseAzureReadOptions(FileOpener *opener) {
 	return options;
 }
 
+static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(AzureAuthentication &auth) {
+	Azure::Core::Http::Policies::TransportOptions options;
+	if (auth.secret) {
+		auto http_proxy = auth.secret->TryGetValue("http_proxy");
+		if (!http_proxy.IsNull()) {
+			options.HttpProxy = http_proxy.ToString();
+		} else {
+			// Keep honoring the env variable if present
+			auto *http_proxy_env = std::getenv("HTTP_PROXY");
+			if (http_proxy_env != nullptr) {
+				options.HttpProxy = http_proxy_env;
+			}
+		}
+
+		auto http_proxy_user_name = auth.secret->TryGetValue("proxy_user_name");
+		if (!http_proxy_user_name.IsNull()) {
+			options.ProxyUserName = http_proxy_user_name.ToString();
+		}
+
+		auto http_proxypassword = auth.secret->TryGetValue("proxy_password");
+		if (!http_proxypassword.IsNull()) {
+			options.ProxyPassword = http_proxypassword.ToString();
+		}
+	} else {
+		const auto &proxy_options = auth.proxy_options;
+		if (!proxy_options.http_proxy.empty()) {
+			options.HttpProxy = proxy_options.http_proxy;
+		}
+
+		if (!proxy_options.user_name.empty()) {
+			options.ProxyUserName = proxy_options.user_name;
+		}
+
+		if (!proxy_options.password.empty()) {
+			options.ProxyPassword = proxy_options.password;
+		}
+	}
+
+	return options;
+}
+
 static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthentication &auth, AzureParsedUrl &url) {
 	string connection_string;
 	bool use_secret = false;
@@ -145,13 +206,17 @@ static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthen
 	string account_name;
 	string endpoint;
 
+	auto transport_options = GetTransportOptions(auth);
+	Azure::Storage::Blobs::BlobClientOptions options;
+	options.Transport = transport_options;
+
 	// Firstly, try to use the auth from the secret
 	if (auth.secret) {
 		// If connection string, we're done heres
 		auto connection_string_value = auth.secret->TryGetValue("connection_string");
 		if (!connection_string_value.IsNull()) {
 			return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(
-			    connection_string_value.ToString(), url.container);
+			    connection_string_value.ToString(), url.container, options);
 		}
 
 		// Account_name can be used both for unauthenticated
@@ -181,7 +246,7 @@ static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthen
 
 		if (!auth.connection_string.empty()) {
 			return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(auth.connection_string,
-			                                                                              url.container);
+			                                                                              url.container, options);
 		}
 	}
 
@@ -192,17 +257,17 @@ static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthen
 	// Build credential chain, from last to first
 	Azure::Identity::ChainedTokenCredential::Sources credential_chain;
 	if (!chain.empty()) {
-		credential_chain = CreateCredentialChainFromSetting(chain);
+		credential_chain = CreateCredentialChainFromSetting(chain, transport_options);
 	}
 
 	auto accountURL = "https://" + account_name + "." + endpoint;
 	if (!credential_chain.empty()) {
 		// A set of credentials providers was passed
 		auto chainedTokenCredential = std::make_shared<Azure::Identity::ChainedTokenCredential>(credential_chain);
-		Azure::Storage::Blobs::BlobServiceClient blob_service_client(accountURL, chainedTokenCredential);
+		Azure::Storage::Blobs::BlobServiceClient blob_service_client(accountURL, chainedTokenCredential, options);
 		return blob_service_client.GetBlobContainerClient(url.container);
 	} else if (!account_name.empty()) {
-		return Azure::Storage::Blobs::BlobContainerClient(accountURL + "/" + url.container);
+		return Azure::Storage::Blobs::BlobContainerClient(accountURL + "/" + url.container, options);
 	} else {
 		throw InvalidInputException("No valid Azure credentials found!");
 	}
@@ -361,6 +426,17 @@ static void LoadInternal(DatabaseInstance &instance) {
 	                          "Size of the read buffer.  It is recommended that this is evenly divisible by "
 	                          "azure_read_transfer_chunk_size.",
 	                          LogicalType::UBIGINT, Value::UBIGINT(default_read_options.buffer_size));
+
+	auto *http_proxy = std::getenv("HTTP_PROXY");
+	Value default_http_value = http_proxy ? Value(http_proxy) : Value(nullptr);
+	config.AddExtensionOption("azure_http_proxy",
+	                          "Proxy to use when login & performing request to azure. "
+	                          "By default it will use the HTTP_PROXY environment variable if set.",
+	                          LogicalType::VARCHAR, default_http_value);
+	config.AddExtensionOption("azure_proxy_user_name", "Http proxy user name if needed.", LogicalType::VARCHAR,
+	                          Value(nullptr));
+	config.AddExtensionOption("azure_proxy_password", "Http proxy password if needed.", LogicalType::VARCHAR,
+	                          Value(nullptr));
 }
 
 int64_t AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes) {

@@ -1,5 +1,7 @@
 #include "azure_secret.hpp"
+#include "duckdb/common/unique_ptr.hpp"
 #include "duckdb/main/extension_util.hpp"
+#include "duckdb/main/secret/secret.hpp"
 #include <azure/identity/azure_cli_credential.hpp>
 #include <azure/identity/chained_token_credential.hpp>
 #include <azure/identity/default_azure_credential.hpp>
@@ -18,6 +20,26 @@ static string TryGetStringParam(CreateSecretInput &input, const string &param_na
 	}
 }
 
+static void FillWithAzureProxyInfo(ClientContext &context, CreateSecretInput &input, KeyValueSecret &result) {
+	string http_proxy = TryGetStringParam(input, "http_proxy");
+	string proxy_user_name = TryGetStringParam(input, "proxy_user_name");
+	string proxy_password = TryGetStringParam(input, "proxy_password");
+
+	// Proxy info
+	if (!http_proxy.empty()) {
+		result.secret_map["http_proxy"] = http_proxy;
+	}
+	if (!proxy_user_name.empty()) {
+		result.secret_map["proxy_user_name"] = proxy_user_name;
+	}
+	if (!proxy_password.empty()) {
+		result.secret_map["proxy_password"] = proxy_password;
+	}
+
+	// Same goes for password information
+	result.redact_keys.insert("proxy_password");
+}
+
 static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context, CreateSecretInput &input) {
 	string connection_string = TryGetStringParam(input, "connection_string");
 	string account_name = TryGetStringParam(input, "account_name");
@@ -29,6 +51,8 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
+
+	FillWithAzureProxyInfo(context, input, *result);
 
 	//! Add connection string
 	if (!connection_string.empty()) {
@@ -59,6 +83,8 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
 
+	FillWithAzureProxyInfo(context, input, *result);
+
 	// Add config to kv secret
 	if (input.options.find("chain") != input.options.end()) {
 		result->secret_map["chain"] = TryGetStringParam(input, "chain");
@@ -71,6 +97,16 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 	}
 
 	return std::move(result);
+}
+
+static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
+	// Register azure common parameters
+	function.named_parameters["account_name"] = LogicalType::VARCHAR;
+
+	// Register proxy parameters
+	function.named_parameters["http_proxy"] = LogicalType::VARCHAR;
+	function.named_parameters["proxy_user_name"] = LogicalType::VARCHAR;
+	function.named_parameters["proxy_password"] = LogicalType::VARCHAR;
 }
 
 void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
@@ -86,14 +122,14 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	// Register the connection string secret provider
 	CreateSecretFunction connection_string_function = {type, "config", CreateAzureSecretFromConfig};
 	connection_string_function.named_parameters["connection_string"] = LogicalType::VARCHAR;
-	connection_string_function.named_parameters["account_name"] = LogicalType::VARCHAR;
+	RegisterCommonSecretParameters(connection_string_function);
 	ExtensionUtil::RegisterFunction(instance, connection_string_function);
 
 	// Register the credential_chain secret provider
 	CreateSecretFunction cred_chain_function = {type, "credential_chain", CreateAzureSecretFromCredentialChain};
 	cred_chain_function.named_parameters["chain"] = LogicalType::VARCHAR;
-	cred_chain_function.named_parameters["account_name"] = LogicalType::VARCHAR;
 	cred_chain_function.named_parameters["azure_endpoint"] = LogicalType::VARCHAR;
+	RegisterCommonSecretParameters(cred_chain_function);
 	ExtensionUtil::RegisterFunction(instance, cred_chain_function);
 }
 
