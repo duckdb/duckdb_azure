@@ -43,6 +43,18 @@ static void LoadInternal(DatabaseInstance &instance) {
 	                          "by setting this option to false.",
 	                          LogicalType::BOOLEAN, true);
 
+	// SPN configuration entries
+	config.AddExtensionOption("azure_tenant_id", "The Microsoft Entra tenant (directory) ID.", LogicalType::VARCHAR);
+	config.AddExtensionOption("azure_spn_client_id",
+	                          "The client (application) ID of an App Registration in the tenant.",
+	                          LogicalType::VARCHAR);
+	config.AddExtensionOption("azure_spn_client_secret", "A client secret that was generated for the App Registration.",
+	                          LogicalType::VARCHAR);
+	config.AddExtensionOption(
+	    "azure_spn_client_certificate_path",
+	    "A path to certificate and private key pair in PEM or PFX format, which can authenticate the App Registration.",
+	    LogicalType::VARCHAR);
+
 	AzureReadOptions default_read_options;
 	config.AddExtensionOption("azure_read_transfer_concurrency",
 	                          "Maximum number of threads the Azure client can use for a single parallel read. "

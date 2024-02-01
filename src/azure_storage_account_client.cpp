@@ -13,6 +13,8 @@
 #include <azure/core/credentials/token_credential_options.hpp>
 #include <azure/identity/azure_cli_credential.hpp>
 #include <azure/identity/chained_token_credential.hpp>
+#include <azure/identity/client_certificate_credential.hpp>
+#include <azure/identity/client_secret_credential.hpp>
 #include <azure/identity/default_azure_credential.hpp>
 #include <azure/identity/environment_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
@@ -69,6 +71,23 @@ CreateChainedTokenCredential(const std::string &chain,
 		}
 	}
 	return std::make_shared<Azure::Identity::ChainedTokenCredential>(sources);
+}
+
+static std::shared_ptr<Azure::Core::Credentials::TokenCredential>
+CreateClientCredential(const std::string &tenant_id, const std::string &client_id, const std::string &client_secret,
+                       const std::string &client_certificate_path,
+                       const Azure::Core::Http::Policies::TransportOptions &transport_options) {
+	auto credential_options = ToTokenCredentialOptions(transport_options);
+	if (!client_secret.empty()) {
+		return std::make_shared<Azure::Identity::ClientSecretCredential>(tenant_id, client_id, client_secret,
+		                                                                 credential_options);
+	} else if (!client_certificate_path.empty()) {
+		return std::make_shared<Azure::Identity::ClientCertificateCredential>(
+		    tenant_id, client_id, client_certificate_path, credential_options);
+	}
+
+	throw InvalidInputException("Failed to fetch key 'client_secret' or 'client_certificate_path' from secret "
+	                            "'service_principal' of type 'azure'");
 }
 
 static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(const KeyValueSecret &secret) {
@@ -150,6 +169,36 @@ GetStorageAccountClientFromCredentialChainProvider(const KeyValueSecret &secret)
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, std::move(credential), blob_options);
 }
 
+static Azure::Storage::Blobs::BlobServiceClient
+GetStorageAccountClientFromServicePrincipalProvider(const KeyValueSecret &secret) {
+	auto transport_options = GetTransportOptions(secret);
+
+	constexpr bool error_on_missing = true;
+	auto tenant_id = secret.TryGetValue("tenant_id", error_on_missing);
+	auto client_id = secret.TryGetValue("client_id", error_on_missing);
+	auto client_secret_val = secret.TryGetValue("client_secret");
+	auto client_certificate_path_val = secret.TryGetValue("client_certificate_path");
+
+	std::string client_secret = client_secret_val.IsNull() ? "" : client_secret_val.ToString();
+	std::string client_certificate_path =
+	    client_certificate_path_val.IsNull() ? "" : client_certificate_path_val.ToString();
+
+	auto token_credential = CreateClientCredential(tenant_id.ToString(), client_id.ToString(), client_secret,
+	                                               client_certificate_path, transport_options);
+
+	auto account_name = secret.TryGetValue("account_name", error_on_missing);
+
+	std::string endpoint = DEFAULT_ENDPOINT;
+	auto endpoint_value = secret.TryGetValue("endpoint");
+	if (!endpoint_value.IsNull()) {
+		endpoint = endpoint_value.ToString();
+	}
+
+	auto account_url = "https://" + account_name.ToString() + "." + endpoint;
+	auto blob_options = ToBlobClientOptions(transport_options);
+	return Azure::Storage::Blobs::BlobServiceClient {account_url, token_credential, blob_options};
+}
+
 static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(const KeyValueSecret &secret) {
 	auto &provider = secret.GetProvider();
 	// default provider
@@ -157,6 +206,8 @@ static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(const Ke
 		return GetStorageAccountClientFromConfigProvider(secret);
 	} else if (provider == "credential_chain") {
 		return GetStorageAccountClientFromCredentialChainProvider(secret);
+	} else if (provider == "service_principal") {
+		return GetStorageAccountClientFromServicePrincipalProvider(secret);
 	}
 
 	throw InvalidInputException("Unsupported provider type %s for azure", provider);
@@ -204,6 +255,17 @@ static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(FileOpen
 	}
 
 	auto account_url = "https://" + azure_account_name + "." + endpoint;
+	// Service principal secret equivalent
+	auto tenant_id = TryGetCurrentSetting(opener, "azure_tenant_id");
+	auto client_id = TryGetCurrentSetting(opener, "azure_spn_client_id");
+	auto client_secret = TryGetCurrentSetting(opener, "azure_spn_client_secret");
+	auto client_certificate_path = TryGetCurrentSetting(opener, "azure_spn_client_certificate_path");
+	if (!tenant_id.empty() && !client_id.empty() && (!client_secret.empty() || !client_certificate_path.empty())) {
+		auto token_credential =
+		    CreateClientCredential(tenant_id, client_id, client_secret, client_certificate_path, transport_options);
+		return Azure::Storage::Blobs::BlobServiceClient {account_url, token_credential, blob_options};
+	}
+
 	// Credential chain secret equivalent
 	auto credential_chain = TryGetCurrentSetting(opener, "azure_credential_chain");
 	if (!credential_chain.empty()) {
