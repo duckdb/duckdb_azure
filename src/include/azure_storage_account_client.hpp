@@ -6,6 +6,8 @@
 
 namespace duckdb {
 
-Azure::Storage::Blobs::BlobServiceClient ConnectToStorageAccount(FileOpener *opener, const std::string &path);
+Azure::Storage::Blobs::BlobServiceClient ConnectToStorageAccount(FileOpener *opener, const std::string &path,
+                                                                 const std::string &storage_account_name,
+                                                                 const std::string &provided_endpoint);
 
 } // namespace duckdb

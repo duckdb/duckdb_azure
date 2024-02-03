@@ -17,14 +17,12 @@
 #include <azure/core/diagnostics/logger.hpp>
 #include <cstdlib>
 #include <memory>
+#include <string>
 #include <utility>
 
 namespace duckdb {
 
 using namespace Azure::Core::Diagnostics;
-
-// Constant
-const std::string AzureStorageFileSystem::DEFAULT_AZURE_STORAGE_ACCOUNT = "default_azure_storage_account";
 
 // globals for collection Azure SDK logging information
 mutex AzureStorageFileSystem::azure_log_lock = {};
@@ -157,7 +155,7 @@ unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const st
 	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
 
 	auto parsed_url = ParseUrl(path);
-	auto storage_account = GetOrCreateStorageAccountContext(opener, path);
+	auto storage_account = GetOrCreateStorageAccountContext(opener, path, parsed_url);
 	auto container = storage_account->GetBlobContainerClient(parsed_url.container);
 	auto blob_client = container.GetBlockBlobClient(parsed_url.path);
 
@@ -232,7 +230,7 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 	}
 
 	auto azure_url = AzureStorageFileSystem::ParseUrl(path);
-	auto storage_account = GetOrCreateStorageAccountContext(opener, path);
+	auto storage_account = GetOrCreateStorageAccountContext(opener, path, azure_url);
 
 	// Azure matches on prefix, not glob pattern, so we take a substring until the first wildcard
 	auto first_wildcard_pos = azure_url.path.find_first_of("*[\\");
@@ -380,28 +378,48 @@ void AzureStorageFileSystem::ReadRange(FileHandle &handle, idx_t file_offset, ch
 }
 
 AzureParsedUrl AzureStorageFileSystem::ParseUrl(const string &url) {
-	string container, prefix, path;
+	string container, storage_account_name, endpoint, prefix, path;
 
 	if (url.rfind("azure://", 0) * url.rfind("az://", 0) != 0) {
 		throw IOException("URL needs to start with azure:// or az://");
 	}
-	auto prefix_end_pos = url.find("//") + 2;
-	auto slash_pos = url.find('/', prefix_end_pos);
+	const auto prefix_end_pos = url.find("//") + 2;
+
+	// To keep compatibility with the initial version of the extension the `storage account name` and the `endpoint` are
+	// optional nevertheless if the storage account is specify we expect the endpoint as well. Like this we hope that
+	// they will be no more changes to path format.
+	const auto at_pos = url.find('@', prefix_end_pos);
+	const auto slash_pos = url.find('/', prefix_end_pos);
 	if (slash_pos == string::npos) {
 		throw IOException("URL needs to contain a '/' after the host");
 	}
-	container = url.substr(prefix_end_pos, slash_pos - prefix_end_pos);
-	if (container.empty()) {
-		throw IOException("URL needs to contain a bucket name");
-	}
 
+	if (at_pos != string::npos && at_pos < slash_pos) {
+		const auto dot_pos = url.find('.', prefix_end_pos);
+		if (dot_pos == string::npos || dot_pos > slash_pos) {
+			throw IOException(
+			    "URL must be with the following format: (azure|az)://<container>@<storage account>.<endpoint>/<path>");
+		}
+		container = url.substr(prefix_end_pos, at_pos - prefix_end_pos);
+		storage_account_name = url.substr(at_pos + 1, dot_pos - at_pos - 1);
+		endpoint = url.substr(dot_pos + 1, slash_pos - dot_pos - 1);
+		path = url.substr(slash_pos + 1);
+	} else {
+		container = url.substr(prefix_end_pos, slash_pos - prefix_end_pos);
+		if (container.empty()) {
+			throw IOException("URL needs to contain a bucket name");
+		}
+
+		path = url.substr(slash_pos + 1);
+	}
 	prefix = url.substr(0, prefix_end_pos);
-	path = url.substr(slash_pos + 1);
-	return {container, prefix, path};
+
+	return {container, storage_account_name, endpoint, prefix, path};
 }
 
-std::shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageAccountContext(FileOpener *opener,
-                                                                                            const std::string &path) {
+std::shared_ptr<AzureContextState>
+AzureStorageFileSystem::GetOrCreateStorageAccountContext(FileOpener *opener, const std::string &path,
+                                                         const AzureParsedUrl &parsed_url) {
 	Value value;
 	bool azure_context_caching = true;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_context_caching", value)) {
@@ -413,24 +431,27 @@ std::shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageAcc
 		auto *client_context = FileOpener::TryGetClientContext(opener);
 
 		auto &registered_state = client_context->registered_state;
-		auto storage_account_it = registered_state.find(DEFAULT_AZURE_STORAGE_ACCOUNT);
+		auto storage_account_it = registered_state.find(parsed_url.storage_account_name);
 		if (storage_account_it == registered_state.end()) {
-			result = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
-			registered_state.insert(std::make_pair(DEFAULT_AZURE_STORAGE_ACCOUNT, result));
+			result = std::make_shared<AzureContextState>(
+			    ConnectToStorageAccount(opener, path, parsed_url.storage_account_name, parsed_url.endpoint));
+			registered_state.insert(std::make_pair(parsed_url.storage_account_name, result));
 		} else {
 			auto *azure_context_state = static_cast<AzureContextState *>(storage_account_it->second.get());
 			// We keep the context valid until the QueryEnd (cf: AzureContextState#QueryEnd())
 			// we do so because between queries the user can change the secret/variable that has been set
 			// the side effect of that is that we will reconnect (potentially retrieve a new token) on each request
 			if (!azure_context_state->IsValid()) {
-				result = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
-				registered_state[DEFAULT_AZURE_STORAGE_ACCOUNT] = result;
+				result = std::make_shared<AzureContextState>(
+				    ConnectToStorageAccount(opener, path, parsed_url.storage_account_name, parsed_url.endpoint));
+				registered_state[parsed_url.storage_account_name] = result;
 			} else {
 				result = std::shared_ptr<AzureContextState>(storage_account_it->second, azure_context_state);
 			}
 		}
 	} else {
-		result = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
+		result = std::make_shared<AzureContextState>(
+		    ConnectToStorageAccount(opener, path, parsed_url.storage_account_name, parsed_url.endpoint));
 	}
 
 	return result;

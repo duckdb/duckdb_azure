@@ -27,9 +27,11 @@ struct AzureReadOptions {
 };
 
 struct AzureParsedUrl {
-	string container;
-	string prefix;
-	string path;
+	const string container;
+	const string storage_account_name;
+	const string endpoint;
+	const string prefix;
+	const string path;
 };
 
 class AzureStorageFileHandle : public FileHandle {
@@ -104,15 +106,12 @@ public:
 
 protected:
 	static AzureParsedUrl ParseUrl(const string &url);
-	static std::shared_ptr<AzureContextState> GetOrCreateStorageAccountContext(FileOpener *opener,
-	                                                                           const std::string &path);
+	static std::shared_ptr<AzureContextState> GetOrCreateStorageAccountContext(FileOpener *opener, const string &path,
+	                                                                           const AzureParsedUrl &parsed_url);
 	static void ReadRange(FileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len);
 	virtual duckdb::unique_ptr<AzureStorageFileHandle> CreateHandle(const string &path, uint8_t flags,
 	                                                                FileLockType lock, FileCompressionType compression,
 	                                                                FileOpener *opener);
-
-private:
-	const static std::string DEFAULT_AZURE_STORAGE_ACCOUNT;
 };
 
 } // namespace duckdb
