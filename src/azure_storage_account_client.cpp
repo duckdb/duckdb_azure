@@ -105,7 +105,7 @@ CreateChainedTokenCredential(const std::string &chain,
 			sources.push_back(std::make_shared<Azure::Identity::EnvironmentCredential>(credential_options));
 		} else if (item == "default") {
 			sources.push_back(std::make_shared<Azure::Identity::DefaultAzureCredential>(credential_options));
-		} else if (item != "none") {
+		} else {
 			throw InvalidInputException("Unknown credential provider found: " + item);
 		}
 	}
