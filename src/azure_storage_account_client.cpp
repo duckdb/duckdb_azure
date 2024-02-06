@@ -11,6 +11,7 @@
 #include "duckdb/main/secret/secret_manager.hpp"
 
 #include <azure/core/credentials/token_credential_options.hpp>
+#include <azure/core/http/curl_transport.hpp>
 #include <azure/identity/azure_cli_credential.hpp>
 #include <azure/identity/chained_token_credential.hpp>
 #include <azure/identity/client_certificate_credential.hpp>
@@ -21,6 +22,8 @@
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/blobs/blob_service_client.hpp>
 
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <string>
 
@@ -129,31 +132,113 @@ CreateClientCredential(const std::string &tenant_id, const std::string &client_i
 	                            "'service_principal' of type 'azure'");
 }
 
-static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(const KeyValueSecret &secret) {
-	Azure::Core::Http::Policies::TransportOptions transport_options;
+static std::shared_ptr<Azure::Core::Http::HttpTransport>
+CreateCurlTransport(const std::string &proxy, const std::string &proxy_username, const std::string &proxy_password) {
+	Azure::Core::Http::CurlTransportOptions curl_transport_options;
 
-	auto http_proxy = secret.TryGetValue("http_proxy");
-	if (!http_proxy.IsNull()) {
-		transport_options.HttpProxy = http_proxy.ToString();
+	if (!proxy.empty()) {
+		curl_transport_options.Proxy = proxy;
+	}
+
+	if (!proxy_username.empty()) {
+		curl_transport_options.ProxyUsername = proxy_username;
+	}
+
+	if (!proxy_password.empty()) {
+		curl_transport_options.ProxyPassword = proxy_password;
+	}
+
+	const char *ca_info = std::getenv("CURL_CA_INFO");
+#if !defined(_WIN32) && !defined(__APPLE__)
+	if (!ca_info) {
+		// https://github.com/Azure/azure-sdk-for-cpp/issues/4983
+		// https://github.com/Azure/azure-sdk-for-cpp/issues/4738
+		for (const auto *path : {
+		         "/etc/ssl/certs/ca-certificates.crt",                // Debian/Ubuntu/Gentoo etc.
+		         "/etc/pki/tls/certs/ca-bundle.crt",                  // Fedora/RHEL 6
+		         "/etc/ssl/ca-bundle.pem",                            // OpenSUSE
+		         "/etc/pki/tls/cacert.pem",                           // OpenELEC
+		         "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", // CentOS/RHEL 7
+		         "/etc/ssl/cert.pem"                                  // Alpine Linux
+		     }) {
+			if (FILE *f = fopen(path, "r")) {
+				fclose(f);
+				ca_info = path;
+				break;
+			}
+		}
+	}
+#endif
+	if (ca_info) {
+		curl_transport_options.CAInfo = ca_info;
+	}
+
+	const char *ca_path = std::getenv("CURL_CA_PATH");
+	if (ca_path) {
+		curl_transport_options.CAPath = ca_path;
+	}
+
+	return std::make_shared<Azure::Core::Http::CurlTransport>(curl_transport_options);
+}
+
+static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(const std::string &transport_option_type,
+                                                                         const std::string &proxy,
+                                                                         const std::string &proxy_username,
+                                                                         const std::string &proxy_password) {
+	Azure::Core::Http::Policies::TransportOptions transport_options;
+	if (transport_option_type == "default") {
+		if (!proxy.empty()) {
+			transport_options.HttpProxy = proxy;
+		}
+
+		if (!proxy_username.empty()) {
+			transport_options.ProxyUserName = proxy_username;
+		}
+
+		if (!proxy_password.empty()) {
+			transport_options.ProxyPassword = proxy_password;
+		}
+	} else if (transport_option_type == "curl") {
+		transport_options.Transport = CreateCurlTransport(proxy, proxy_username, proxy_password);
+	} else {
+		throw InvalidInputException("transport_option_type cannot take value '%s'", transport_option_type);
+	}
+
+	return transport_options;
+}
+
+static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(const KeyValueSecret &secret) {
+	std::string transport_option_type = "default";
+	auto transport_option_type_val = secret.TryGetValue("transport_option_type");
+	if (!transport_option_type_val.IsNull()) {
+		transport_option_type = transport_option_type_val.ToString();
+	}
+
+	std::string http_proxy;
+	auto http_proxy_val = secret.TryGetValue("http_proxy");
+	if (!http_proxy_val.IsNull()) {
+		http_proxy = http_proxy_val.ToString();
 	} else {
 		// Keep honoring the env variable if present
 		auto *http_proxy_env = std::getenv("HTTP_PROXY");
 		if (http_proxy_env != nullptr) {
-			transport_options.HttpProxy = http_proxy_env;
+			http_proxy = http_proxy_env;
 		}
 	}
 
-	auto http_proxy_user_name = secret.TryGetValue("proxy_user_name");
-	if (!http_proxy_user_name.IsNull()) {
-		transport_options.ProxyUserName = http_proxy_user_name.ToString();
+	std::string http_proxy_username;
+	auto http_proxy_username_val = secret.TryGetValue("proxy_user_name");
+	if (!http_proxy_username_val.IsNull()) {
+		http_proxy_username = http_proxy_username_val.ToString();
 	}
 
-	auto http_proxypassword = secret.TryGetValue("proxy_password");
-	if (!http_proxypassword.IsNull()) {
-		transport_options.ProxyPassword = http_proxypassword.ToString();
+	std::string http_proxy_password;
+	auto http_proxy_password_val = secret.TryGetValue("proxy_password");
+	if (!http_proxy_password_val.IsNull()) {
+		http_proxy_password = http_proxy_password_val.ToString();
 	}
 
-	return transport_options;
+	return GetTransportOptions(transport_option_type, http_proxy, http_proxy_username, http_proxy_password);
 }
 
 static Azure::Storage::Blobs::BlobServiceClient
@@ -239,25 +324,14 @@ static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(const Ke
 }
 
 static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(FileOpener *opener) {
-	Azure::Core::Http::Policies::TransportOptions transport_options;
+	auto azure_transport_option_type = TryGetCurrentSetting(opener, "azure_transport_option_type");
 
 	// Load proxy options
 	auto http_proxy = TryGetCurrentSetting(opener, "azure_http_proxy");
-	if (!http_proxy.empty()) {
-		transport_options.HttpProxy = http_proxy;
-	}
-
 	auto http_proxy_user_name = TryGetCurrentSetting(opener, "azure_proxy_user_name");
-	if (!http_proxy_user_name.empty()) {
-		transport_options.ProxyUserName = http_proxy_user_name;
-	}
-
 	auto http_proxy_password = TryGetCurrentSetting(opener, "azure_proxy_password");
-	if (!http_proxy_password.empty()) {
-		transport_options.ProxyPassword = http_proxy_password;
-	}
 
-	return transport_options;
+	return GetTransportOptions(azure_transport_option_type, http_proxy, http_proxy_user_name, http_proxy_password);
 }
 
 static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(FileOpener *opener,

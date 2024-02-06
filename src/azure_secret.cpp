@@ -1,4 +1,5 @@
 #include "azure_secret.hpp"
+#include "duckdb/common/types.hpp"
 #include "duckdb/common/unique_ptr.hpp"
 #include "duckdb/main/extension_util.hpp"
 #include "duckdb/main/secret/secret.hpp"
@@ -10,29 +11,25 @@
 #include <azure/storage/blobs.hpp>
 
 namespace duckdb {
+constexpr auto COMMON_OPTIONS = {
+    // Proxy option
+    "http_proxy", "proxy_user_name", "proxy_password",
+    // Storage account option
+    "account_name", "transport_option_type"};
 
-static void FillWithAzureProxyInfo(ClientContext &context, CreateSecretInput &input, KeyValueSecret &result) {
-	auto http_proxy = input.options.find("http_proxy");
-	auto proxy_user_name = input.options.find("proxy_user_name");
-	auto proxy_password = input.options.find("proxy_password");
+static void CopySecret(const std::string &key, const CreateSecretInput &input, KeyValueSecret &result) {
+	auto val = input.options.find(key);
 
-	// Proxy info
-	if (http_proxy != input.options.end()) {
-		result.secret_map["http_proxy"] = http_proxy->second;
-	}
-	if (proxy_user_name != input.options.end()) {
-		result.secret_map["proxy_user_name"] = proxy_user_name->second;
-	}
-	if (proxy_password != input.options.end()) {
-		result.secret_map["proxy_password"] = proxy_password->second;
-		result.redact_keys.insert("proxy_password");
+	if (val != input.options.end()) {
+		result.secret_map[key] = val->second;
 	}
 }
 
-static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context, CreateSecretInput &input) {
-	auto connection_string = input.options.find("connection_string");
-	auto account_name = input.options.find("account_name");
+static void RedactCommonKeys(KeyValueSecret &result) {
+	result.redact_keys.insert("proxy_password");
+}
 
+static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context, CreateSecretInput &input) {
 	auto scope = input.scope;
 	if (scope.empty()) {
 		scope.push_back("azure://");
@@ -41,28 +38,22 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
 
-	FillWithAzureProxyInfo(context, input, *result);
-
-	//! Add connection string
-	if (connection_string != input.options.end()) {
-		result->secret_map["connection_string"] = connection_string->second;
-		//! Connection string may hold sensitive data: it should be redacted
-		result->redact_keys.insert("connection_string");
+	// Manage common option that all secret type share
+	for (const auto *key : COMMON_OPTIONS) {
+		CopySecret(key, input, *result);
 	}
 
-	// Add account_id
-	if (account_name != input.options.end()) {
-		result->secret_map["account_name"] = account_name->second;
-	}
+	// Manage specific secret option
+	CopySecret("connection_string", input, *result);
+
+	// Redact sensible keys
+	RedactCommonKeys(*result);
+	result->redact_keys.insert("connection_string");
 
 	return std::move(result);
 }
 
 static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext &context, CreateSecretInput &input) {
-	auto chain = input.options.find("chain");
-	auto account_name = input.options.find("account_name");
-	auto azure_endpoint = input.options.find("azure_endpoint");
-
 	auto scope = input.scope;
 	if (scope.empty()) {
 		scope.push_back("azure://");
@@ -71,31 +62,22 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
 
-	FillWithAzureProxyInfo(context, input, *result);
+	// Manage common option that all secret type share
+	for (const auto *key : COMMON_OPTIONS) {
+		CopySecret(key, input, *result);
+	}
 
-	// Add config to kv secret
-	if (chain != input.options.end()) {
-		result->secret_map["chain"] = chain->second;
-	}
-	if (account_name != input.options.end()) {
-		result->secret_map["account_name"] = account_name->second;
-	}
-	if (azure_endpoint != input.options.end()) {
-		result->secret_map["azure_endpoint"] = azure_endpoint->second;
-	}
+	// Manage specific secret option
+	CopySecret("chain", input, *result);
+	CopySecret("azure_endpoint", input, *result);
+
+	// Redact sensible keys
+	RedactCommonKeys(*result);
 
 	return std::move(result);
 }
 
 static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContext &context, CreateSecretInput &input) {
-	auto tenant_id = input.options.find("tenant_id");
-	auto client_id = input.options.find("client_id");
-	auto client_secret = input.options.find("client_secret");
-	auto client_certificate_path = input.options.find("client_certificate_path");
-
-	auto account_name = input.options.find("account_name");
-	auto azure_endpoint = input.options.find("azure_endpoint");
-
 	auto scope = input.scope;
 	if (scope.empty()) {
 		scope.push_back("azure://");
@@ -103,31 +85,23 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContex
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
-
-	FillWithAzureProxyInfo(context, input, *result);
-
-	// Add config to kv secret
-	if (tenant_id != input.options.end()) {
-		result->secret_map["tenant_id"] = tenant_id->second;
-	}
-	if (client_id != input.options.end()) {
-		result->secret_map["client_id"] = client_id->second;
-	}
-	if (client_secret != input.options.end()) {
-		result->secret_map["client_secret"] = client_secret->second;
-		result->redact_keys.insert("client_secret");
-	}
-	if (client_certificate_path != input.options.end()) {
-		result->secret_map["client_certificate_path"] = client_certificate_path->second;
-		result->redact_keys.insert("client_certificate_path");
+	
+	// Manage common option that all secret type share
+	for (const auto *key : COMMON_OPTIONS) {
+		CopySecret(key, input, *result);
 	}
 
-	if (account_name != input.options.end()) {
-		result->secret_map["account_name"] = account_name->second;
-	}
-	if (azure_endpoint != input.options.end()) {
-		result->secret_map["azure_endpoint"] = azure_endpoint->second;
-	}
+	// Manage specific secret option
+	CopySecret("tenant_id", input, *result);
+	CopySecret("client_id", input, *result);
+	CopySecret("client_secret", input, *result);
+	CopySecret("client_certificate_path", input, *result);
+	CopySecret("azure_endpoint", input, *result);
+
+	// Redact sensible keys
+	RedactCommonKeys(*result);
+	result->redact_keys.insert("client_secret");
+	result->redact_keys.insert("client_certificate_path");
 
 	return std::move(result);
 }
@@ -135,6 +109,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContex
 static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
 	// Register azure common parameters
 	function.named_parameters["account_name"] = LogicalType::VARCHAR;
+	function.named_parameters["transport_option_type"] = LogicalType::VARCHAR;
 
 	// Register proxy parameters
 	function.named_parameters["http_proxy"] = LogicalType::VARCHAR;

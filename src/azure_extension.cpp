@@ -42,6 +42,11 @@ static void LoadInternal(DatabaseInstance &instance) {
 	                          "If you suspect that the caching is causing some side effect you can try to disable it "
 	                          "by setting this option to false.",
 	                          LogicalType::BOOLEAN, true);
+	config.AddExtensionOption("azure_transport_option_type",
+	                          "Underlying adapter to use with the Azure SDK. Read more about the adapter at "
+	                          "https://github.com/Azure/azure-sdk-for-cpp/blob/main/doc/HttpTransportAdapter.md. Valid "
+	                          "values are: default, curl",
+	                          LogicalType::VARCHAR, "default");
 
 	AzureReadOptions default_read_options;
 	config.AddExtensionOption("azure_read_transfer_concurrency",
