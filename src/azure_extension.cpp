@@ -90,8 +90,7 @@ static AzureAuthentication ParseAzureAuthSettings(FileOpener *opener, const stri
 		auto transaction = CatalogTransaction::GetSystemCatalogTransaction(*context);
 		auto secret_lookup = context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
 		if (secret_lookup.HasMatch()) {
-			const auto &secret = secret_lookup.GetSecret();
-			auth.secret = &dynamic_cast<const KeyValueSecret &>(secret);
+			auth.secret = std::move(secret_lookup.secret_entry->secret);
 		}
 	}
 
@@ -161,7 +160,8 @@ static AzureReadOptions ParseAzureReadOptions(FileOpener *opener) {
 static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(AzureAuthentication &auth) {
 	Azure::Core::Http::Policies::TransportOptions options;
 	if (auth.secret) {
-		auto http_proxy = auth.secret->TryGetValue("http_proxy");
+		const auto &cast_secret = dynamic_cast<const KeyValueSecret&>(*auth.secret);
+		auto http_proxy = cast_secret.TryGetValue("http_proxy");
 		if (!http_proxy.IsNull()) {
 			options.HttpProxy = http_proxy.ToString();
 		} else {
@@ -172,12 +172,12 @@ static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(AzureAu
 			}
 		}
 
-		auto http_proxy_user_name = auth.secret->TryGetValue("proxy_user_name");
+		auto http_proxy_user_name = cast_secret.TryGetValue("proxy_user_name");
 		if (!http_proxy_user_name.IsNull()) {
 			options.ProxyUserName = http_proxy_user_name.ToString();
 		}
 
-		auto http_proxypassword = auth.secret->TryGetValue("proxy_password");
+		auto http_proxypassword = cast_secret.TryGetValue("proxy_password");
 		if (!http_proxypassword.IsNull()) {
 			options.ProxyPassword = http_proxypassword.ToString();
 		}
@@ -212,29 +212,31 @@ static Azure::Storage::Blobs::BlobContainerClient GetContainerClient(AzureAuthen
 
 	// Firstly, try to use the auth from the secret
 	if (auth.secret) {
+		const auto &cast_secret = dynamic_cast<const KeyValueSecret&>(*auth.secret);
+
 		// If connection string, we're done heres
-		auto connection_string_value = auth.secret->TryGetValue("connection_string");
+		auto connection_string_value = cast_secret.TryGetValue("connection_string");
 		if (!connection_string_value.IsNull()) {
 			return Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(
 			    connection_string_value.ToString(), url.container, options);
 		}
 
 		// Account_name can be used both for unauthenticated
-		if (!auth.secret->TryGetValue("account_name").IsNull()) {
+		if (!cast_secret.TryGetValue("account_name").IsNull()) {
 			use_secret = true;
-			account_name = auth.secret->TryGetValue("account_name").ToString();
+			account_name = cast_secret.TryGetValue("account_name").ToString();
 		}
 
 		if (auth.secret->GetProvider() == "credential_chain") {
 			use_secret = true;
-			if (!auth.secret->TryGetValue("chain").IsNull()) {
-				chain = auth.secret->TryGetValue("chain").ToString();
+			if (!cast_secret.TryGetValue("chain").IsNull()) {
+				chain = cast_secret.TryGetValue("chain").ToString();
 			}
 			if (chain.empty()) {
 				chain = "default";
 			}
-			if (!auth.secret->TryGetValue("endpoint").IsNull()) {
-				endpoint = auth.secret->TryGetValue("endpoint").ToString();
+			if (!cast_secret.TryGetValue("endpoint").IsNull()) {
+				endpoint = cast_secret.TryGetValue("endpoint").ToString();
 			}
 		}
 	}
@@ -337,10 +339,7 @@ unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, uint
 
 	if (context && enable_http_stats) {
 		unique_lock<mutex> lck(AzureStorageFileSystem::azure_log_lock);
-		if (!context->client_data->http_state) {
-			context->client_data->http_state = make_shared<HTTPState>();
-		}
-		AzureStorageFileSystem::http_state = context->client_data->http_state;
+		AzureStorageFileSystem::http_state = HTTPState::TryGetState(opener);
 
 		if (!AzureStorageFileSystem::listener_set) {
 			Logger::SetListener(std::bind(&Log, std::placeholders::_1, std::placeholders::_2));
