@@ -14,19 +14,19 @@ concurrency:
 jobs:
   duckdb-stable-build:
     name: Build extension binaries
-    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@5abd3edc2dc60f95d1fa62adbd8e86ae0ea456dd
+    uses: duckdb/duckdb/.github/workflows/_extension_distribution.yml@4d24f5c660a205bf22a7fd99e36efece798452c4
     with:
       extension_name: azure
-      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads' # Can't really work in wasm sandbox
-      duckdb_version: a491470b03
+      duckdb_version: '4d24f5c660'
+      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools'
 
   duckdb-stable-deploy:
     name: Deploy extension binaries
     needs: duckdb-stable-build
-    uses: ./.github/workflows/_extension_deploy.yml
+    uses: duckdb/duckdb/.github/workflows/_extension_deploy.yml@4d24f5c660a205bf22a7fd99e36efece798452c4
     secrets: inherit
     with:
       extension_name: azure
-      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads'
-      duckdb_version: a491470b03
+      duckdb_version: '4d24f5c660'
+      exclude_archs: 'wasm_mvp;wasm_eh;wasm_threads;windows_amd64_rtools'
       deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}

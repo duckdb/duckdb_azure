@@ -1,6 +1,7 @@
 #pragma once
 
 #include "duckdb.hpp"
+#include "duckdb/main/secret/secret.hpp"
 
 namespace Azure {
 namespace Storage {
@@ -13,7 +14,7 @@ class BlobClient;
 namespace duckdb {
 class HTTPState;
 class AzureSecret;
-class KeyValueSecret;
+class BaseSecret;
 
 class AzureExtension : public Extension {
 public:
@@ -29,7 +30,7 @@ struct AzureProxyOptions {
 
 struct AzureAuthentication {
 	//! Main Auth method: through secret
-	optional_ptr<const KeyValueSecret> secret;
+	unique_ptr<const BaseSecret> secret;
 
 	//! Auth method #1: setting the connection string
 	string connection_string;
