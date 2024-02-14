@@ -1,17 +1,23 @@
-## Experimental warning
-This extension is currently in an experimental state. Feel free to try it out, but be aware some things
-may not work as expected.
-
 # DuckDB Azure Extension
-This extension adds a filesystem abstraction for Azure blob storage to DuckDB. To use it, install latest (>0.9.1) DuckDB
-and run: 
+This extension adds a filesystem abstraction for Azure blob storage to DuckDB. To use it, install latest (>= v0.10.0) DuckDB. The extension currently supports only **reads** and **globs**.
+
+The easiest way to get started is by using a connection string to create a DuckDB secret:
 ```sql
-SET azure_storage_connection_string = '<your_connection_string>';
+CREATE SECRET (
+    TYPE AZURE,
+    CONNECTION_STRING '<value>'
+);
 ```
-then you can query files from azure:
+Alternatively, you can let the azure extension automatically fetch your azure credentials, check out the [docs](https://duckdb.org/docs/extensions/azure#credential_chain-provider) on how to do that.
+
+Then to query a file on azure:
 ```sql
 SELECT count(*) FROM 'azure://<my_container>/<my_file>.<parquet_or_csv>';
+```
 
+Globbing is also supported:
+```sql
+SELECT count(*) FROM 'azure://dummy_container/*.csv';
 ```
 
 ## Supported architectures
