@@ -255,17 +255,6 @@ static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(FileOpen
 	}
 
 	auto account_url = "https://" + azure_account_name + "." + endpoint;
-	// Service principal secret equivalent
-	auto tenant_id = TryGetCurrentSetting(opener, "azure_tenant_id");
-	auto client_id = TryGetCurrentSetting(opener, "azure_spn_client_id");
-	auto client_secret = TryGetCurrentSetting(opener, "azure_spn_client_secret");
-	auto client_certificate_path = TryGetCurrentSetting(opener, "azure_spn_client_certificate_path");
-	if (!tenant_id.empty() && !client_id.empty() && (!client_secret.empty() || !client_certificate_path.empty())) {
-		auto token_credential =
-		    CreateClientCredential(tenant_id, client_id, client_secret, client_certificate_path, transport_options);
-		return Azure::Storage::Blobs::BlobServiceClient {account_url, token_credential, blob_options};
-	}
-
 	// Credential chain secret equivalent
 	auto credential_chain = TryGetCurrentSetting(opener, "azure_credential_chain");
 	if (!credential_chain.empty()) {
