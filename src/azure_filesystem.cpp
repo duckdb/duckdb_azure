@@ -404,33 +404,26 @@ std::shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageAcc
                                                                                             const std::string &path) {
 	auto *client_context = FileOpener::TryGetClientContext(opener);
 
-	AzureContextState *result = nullptr;
-
-	auto &storage_account = client_context->registered_state[DEFAULT_AZURE_STORAGE_ACCOUNT];
-	try {
-		if (!storage_account) {
-			storage_account = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
-			result = static_cast<AzureContextState *>(storage_account.get());
+	std::shared_ptr<AzureContextState> result;
+	auto &registered_state = client_context->registered_state;
+	auto storage_account_it = registered_state.find(DEFAULT_AZURE_STORAGE_ACCOUNT);
+	if (storage_account_it == registered_state.end()) {
+		result = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
+		registered_state.insert(std::make_pair(DEFAULT_AZURE_STORAGE_ACCOUNT, result));
+	} else {
+		auto *azure_context_state = static_cast<AzureContextState *>(storage_account_it->second.get());
+		// We keep the context valid until the QueryEnd (cf: AzureContextState#QueryEnd())
+		// we do so because between queries the user can change the secret/variable that has been set
+		// the side effect of that is that we will reconnect (potentially retrieve a new token) on each request
+		if (!azure_context_state->IsValid()) {
+			result = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
+			registered_state[DEFAULT_AZURE_STORAGE_ACCOUNT] = result;
 		} else {
-			auto *azure_context_state = static_cast<AzureContextState *>(storage_account.get());
-			// We keep the context valid until the QueryEnd (cf: AzureContextState#QueryEnd())
-			// we do so because between queries the user can change the secret/variable that has been set
-			// the side effect of that is that we will reconnect (potentially retrieve a new token) on each request
-			if (!azure_context_state->IsValid()) {
-				storage_account = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
-				result = static_cast<AzureContextState *>(storage_account.get());
-			} else {
-				result = azure_context_state;
-			}
+			result = std::shared_ptr<AzureContextState>(storage_account_it->second, azure_context_state);
 		}
-	} catch (...) {
-		// Important remove the potentially created element in the hash map.
-		// Otherwise the engine will try to call QueryEnd on a null pointer!
-		client_context->registered_state.erase(DEFAULT_AZURE_STORAGE_ACCOUNT);
-		throw; // Rethrow the captured exception it failed...
 	}
 
-	return std::shared_ptr<AzureContextState>(storage_account, result);
+	return result;
 }
 
 } // namespace duckdb
