@@ -35,6 +35,13 @@ static void LoadInternal(DatabaseInstance &instance) {
 	                          "Notice that the result may be incorrect for more than one active DuckDB connection "
 	                          "and the calculation of total received and sent bytes is not yet implemented.",
 	                          LogicalType::BOOLEAN, false);
+	config.AddExtensionOption("azure_context_caching",
+	                          "Enable/disable the caching of some context when performing queries. "
+	                          "This cache is by default enable, and will for a given connection keep a local context "
+	                          "when performing a query. "
+	                          "If you suspect that the caching is causing some side effect you can try to disable it "
+	                          "by setting this option to false.",
+	                          LogicalType::BOOLEAN, true);
 
 	AzureReadOptions default_read_options;
 	config.AddExtensionOption("azure_read_transfer_concurrency",

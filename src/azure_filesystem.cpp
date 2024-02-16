@@ -402,25 +402,35 @@ AzureParsedUrl AzureStorageFileSystem::ParseUrl(const string &url) {
 
 std::shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageAccountContext(FileOpener *opener,
                                                                                             const std::string &path) {
-	auto *client_context = FileOpener::TryGetClientContext(opener);
+	Value value;
+	bool azure_context_caching = true;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_context_caching", value)) {
+		azure_context_caching = value.GetValue<bool>();
+	}
 
 	std::shared_ptr<AzureContextState> result;
-	auto &registered_state = client_context->registered_state;
-	auto storage_account_it = registered_state.find(DEFAULT_AZURE_STORAGE_ACCOUNT);
-	if (storage_account_it == registered_state.end()) {
-		result = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
-		registered_state.insert(std::make_pair(DEFAULT_AZURE_STORAGE_ACCOUNT, result));
-	} else {
-		auto *azure_context_state = static_cast<AzureContextState *>(storage_account_it->second.get());
-		// We keep the context valid until the QueryEnd (cf: AzureContextState#QueryEnd())
-		// we do so because between queries the user can change the secret/variable that has been set
-		// the side effect of that is that we will reconnect (potentially retrieve a new token) on each request
-		if (!azure_context_state->IsValid()) {
+	if (azure_context_caching) {
+		auto *client_context = FileOpener::TryGetClientContext(opener);
+
+		auto &registered_state = client_context->registered_state;
+		auto storage_account_it = registered_state.find(DEFAULT_AZURE_STORAGE_ACCOUNT);
+		if (storage_account_it == registered_state.end()) {
 			result = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
-			registered_state[DEFAULT_AZURE_STORAGE_ACCOUNT] = result;
+			registered_state.insert(std::make_pair(DEFAULT_AZURE_STORAGE_ACCOUNT, result));
 		} else {
-			result = std::shared_ptr<AzureContextState>(storage_account_it->second, azure_context_state);
+			auto *azure_context_state = static_cast<AzureContextState *>(storage_account_it->second.get());
+			// We keep the context valid until the QueryEnd (cf: AzureContextState#QueryEnd())
+			// we do so because between queries the user can change the secret/variable that has been set
+			// the side effect of that is that we will reconnect (potentially retrieve a new token) on each request
+			if (!azure_context_state->IsValid()) {
+				result = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
+				registered_state[DEFAULT_AZURE_STORAGE_ACCOUNT] = result;
+			} else {
+				result = std::shared_ptr<AzureContextState>(storage_account_it->second, azure_context_state);
+			}
 		}
+	} else {
+		result = std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path));
 	}
 
 	return result;
