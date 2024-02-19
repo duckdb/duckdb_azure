@@ -11,38 +11,27 @@
 
 namespace duckdb {
 
-static string TryGetStringParam(CreateSecretInput &input, const string &param_name) {
-	auto param_lookup = input.options.find(param_name);
-	if (param_lookup != input.options.end()) {
-		return param_lookup->second.ToString();
-	} else {
-		return "";
-	}
-}
-
 static void FillWithAzureProxyInfo(ClientContext &context, CreateSecretInput &input, KeyValueSecret &result) {
-	string http_proxy = TryGetStringParam(input, "http_proxy");
-	string proxy_user_name = TryGetStringParam(input, "proxy_user_name");
-	string proxy_password = TryGetStringParam(input, "proxy_password");
+	auto http_proxy = input.options.find("http_proxy");
+	auto proxy_user_name = input.options.find("proxy_user_name");
+	auto proxy_password = input.options.find("proxy_password");
 
 	// Proxy info
-	if (!http_proxy.empty()) {
-		result.secret_map["http_proxy"] = http_proxy;
+	if (http_proxy != input.options.end()) {
+		result.secret_map["http_proxy"] = http_proxy->second;
 	}
-	if (!proxy_user_name.empty()) {
-		result.secret_map["proxy_user_name"] = proxy_user_name;
+	if (proxy_user_name != input.options.end()) {
+		result.secret_map["proxy_user_name"] = proxy_user_name->second;
 	}
-	if (!proxy_password.empty()) {
-		result.secret_map["proxy_password"] = proxy_password;
+	if (proxy_password != input.options.end()) {
+		result.secret_map["proxy_password"] = proxy_password->second;
+		result.redact_keys.insert("proxy_password");
 	}
-
-	// Same goes for password information
-	result.redact_keys.insert("proxy_password");
 }
 
 static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context, CreateSecretInput &input) {
-	string connection_string = TryGetStringParam(input, "connection_string");
-	string account_name = TryGetStringParam(input, "account_name");
+	auto connection_string = input.options.find("connection_string");
+	auto account_name = input.options.find("account_name");
 
 	auto scope = input.scope;
 	if (scope.empty()) {
@@ -55,25 +44,24 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context
 	FillWithAzureProxyInfo(context, input, *result);
 
 	//! Add connection string
-	if (!connection_string.empty()) {
-		result->secret_map["connection_string"] = connection_string;
+	if (connection_string != input.options.end()) {
+		result->secret_map["connection_string"] = connection_string->second;
+		//! Connection string may hold sensitive data: it should be redacted
+		result->redact_keys.insert("connection_string");
 	}
 
 	// Add account_id
-	if (!account_name.empty()) {
-		result->secret_map["account_name"] = account_name;
+	if (account_name != input.options.end()) {
+		result->secret_map["account_name"] = account_name->second;
 	}
-
-	//! Connection string may hold sensitive data: it should be redacted
-	result->redact_keys.insert("connection_string");
 
 	return std::move(result);
 }
 
 static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext &context, CreateSecretInput &input) {
-	string chain = TryGetStringParam(input, "chain");
-	string account_name = TryGetStringParam(input, "account_name");
-	string azure_endpoint = TryGetStringParam(input, "azure_endpoint");
+	auto chain = input.options.find("chain");
+	auto account_name = input.options.find("account_name");
+	auto azure_endpoint = input.options.find("azure_endpoint");
 
 	auto scope = input.scope;
 	if (scope.empty()) {
@@ -86,14 +74,14 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 	FillWithAzureProxyInfo(context, input, *result);
 
 	// Add config to kv secret
-	if (input.options.find("chain") != input.options.end()) {
-		result->secret_map["chain"] = TryGetStringParam(input, "chain");
+	if (chain != input.options.end()) {
+		result->secret_map["chain"] = chain->second;
 	}
-	if (input.options.find("account_name") != input.options.end()) {
-		result->secret_map["account_name"] = TryGetStringParam(input, "account_name");
+	if (account_name != input.options.end()) {
+		result->secret_map["account_name"] = account_name->second;
 	}
-	if (input.options.find("azure_endpoint") != input.options.end()) {
-		result->secret_map["azure_endpoint"] = TryGetStringParam(input, "azure_endpoint");
+	if (azure_endpoint != input.options.end()) {
+		result->secret_map["azure_endpoint"] = azure_endpoint->second;
 	}
 
 	return std::move(result);
