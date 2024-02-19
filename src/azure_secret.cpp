@@ -15,7 +15,7 @@ constexpr auto COMMON_OPTIONS = {
     // Proxy option
     "http_proxy", "proxy_user_name", "proxy_password",
     // Storage account option
-    "account_name", "transport_option_type"};
+    "account_name"};
 
 static void CopySecret(const std::string &key, const CreateSecretInput &input, KeyValueSecret &result) {
 	auto val = input.options.find(key);
@@ -85,7 +85,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContex
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
-	
+
 	// Manage common option that all secret type share
 	for (const auto *key : COMMON_OPTIONS) {
 		CopySecret(key, input, *result);
@@ -109,7 +109,6 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContex
 static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
 	// Register azure common parameters
 	function.named_parameters["account_name"] = LogicalType::VARCHAR;
-	function.named_parameters["transport_option_type"] = LogicalType::VARCHAR;
 
 	// Register proxy parameters
 	function.named_parameters["http_proxy"] = LogicalType::VARCHAR;

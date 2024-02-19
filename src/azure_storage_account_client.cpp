@@ -207,12 +207,9 @@ static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(const s
 	return transport_options;
 }
 
-static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(const KeyValueSecret &secret) {
-	std::string transport_option_type = "default";
-	auto transport_option_type_val = secret.TryGetValue("transport_option_type");
-	if (!transport_option_type_val.IsNull()) {
-		transport_option_type = transport_option_type_val.ToString();
-	}
+static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(FileOpener *opener,
+                                                                         const KeyValueSecret &secret) {
+	auto transport_option_type = TryGetCurrentSetting(opener, "azure_transport_option_type");
 
 	std::string http_proxy;
 	auto http_proxy_val = secret.TryGetValue("http_proxy");
@@ -242,9 +239,10 @@ static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(const K
 }
 
 static Azure::Storage::Blobs::BlobServiceClient
-GetStorageAccountClientFromConfigProvider(const KeyValueSecret &secret, const std::string &provided_storage_account,
+GetStorageAccountClientFromConfigProvider(FileOpener *opener, const KeyValueSecret &secret,
+                                          const std::string &provided_storage_account,
                                           const std::string &provided_endpoint) {
-	auto transport_options = GetTransportOptions(secret);
+	auto transport_options = GetTransportOptions(opener, secret);
 
 	// If connection string, we're done heres
 	auto connection_string_val = secret.TryGetValue("connection_string");
@@ -266,9 +264,11 @@ GetStorageAccountClientFromConfigProvider(const KeyValueSecret &secret, const st
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, blob_options);
 }
 
-static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClientFromCredentialChainProvider(
-    const KeyValueSecret &secret, const std::string &provided_storage_account, const std::string &provided_endpoint) {
-	auto transport_options = GetTransportOptions(secret);
+static Azure::Storage::Blobs::BlobServiceClient
+GetStorageAccountClientFromCredentialChainProvider(FileOpener *opener, const KeyValueSecret &secret,
+                                                   const std::string &provided_storage_account,
+                                                   const std::string &provided_endpoint) {
+	auto transport_options = GetTransportOptions(opener, secret);
 
 	std::string chain = "default";
 	auto chain_value = secret.TryGetValue("chain");
@@ -285,9 +285,11 @@ static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClientFromCrede
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, std::move(credential), blob_options);
 }
 
-static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClientFromServicePrincipalProvider(
-    const KeyValueSecret &secret, const std::string &provided_storage_account, const std::string &provided_endpoint) {
-	auto transport_options = GetTransportOptions(secret);
+static Azure::Storage::Blobs::BlobServiceClient
+GetStorageAccountClientFromServicePrincipalProvider(FileOpener *opener, const KeyValueSecret &secret,
+                                                    const std::string &provided_storage_account,
+                                                    const std::string &provided_endpoint) {
+	auto transport_options = GetTransportOptions(opener, secret);
 
 	constexpr bool error_on_missing = true;
 	auto tenant_id = secret.TryGetValue("tenant_id", error_on_missing);
@@ -307,17 +309,20 @@ static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClientFromServi
 	return Azure::Storage::Blobs::BlobServiceClient {account_url, token_credential, blob_options};
 }
 
-static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(const KeyValueSecret &secret,
+static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(FileOpener *opener,
+                                                                        const KeyValueSecret &secret,
                                                                         const std::string &provided_storage_account,
                                                                         const std::string &provided_endpoint) {
 	auto &provider = secret.GetProvider();
 	// default provider
 	if (provider == "config") {
-		return GetStorageAccountClientFromConfigProvider(secret, provided_storage_account, provided_endpoint);
+		return GetStorageAccountClientFromConfigProvider(opener, secret, provided_storage_account, provided_endpoint);
 	} else if (provider == "credential_chain") {
-		return GetStorageAccountClientFromCredentialChainProvider(secret, provided_storage_account, provided_endpoint);
+		return GetStorageAccountClientFromCredentialChainProvider(opener, secret, provided_storage_account,
+		                                                          provided_endpoint);
 	} else if (provider == "service_principal") {
-		return GetStorageAccountClientFromServicePrincipalProvider(secret, provided_storage_account, provided_endpoint);
+		return GetStorageAccountClientFromServicePrincipalProvider(opener, secret, provided_storage_account,
+		                                                           provided_endpoint);
 	}
 
 	throw InvalidInputException("Unsupported provider type %s for azure", provider);
@@ -392,7 +397,7 @@ Azure::Storage::Blobs::BlobServiceClient ConnectToStorageAccount(FileOpener *ope
 			auto secret_lookup = context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
 			if (secret_lookup.HasMatch()) {
 				const auto &base_secret = secret_lookup.GetSecret();
-				return GetStorageAccountClient(dynamic_cast<const KeyValueSecret &>(base_secret),
+				return GetStorageAccountClient(opener, dynamic_cast<const KeyValueSecret &>(base_secret),
 				                               provided_storage_account, provided_endpoint);
 			}
 		} else {
@@ -422,7 +427,7 @@ Azure::Storage::Blobs::BlobServiceClient ConnectToStorageAccount(FileOpener *ope
 			}
 			if (best_match.HasMatch()) {
 				const auto &base_secret = best_match.GetSecret();
-				return GetStorageAccountClient(dynamic_cast<const KeyValueSecret &>(base_secret),
+				return GetStorageAccountClient(opener, dynamic_cast<const KeyValueSecret &>(base_secret),
 				                               provided_storage_account, provided_endpoint);
 			}
 		}
