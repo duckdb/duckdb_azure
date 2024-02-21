@@ -87,6 +87,51 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 	return std::move(result);
 }
 
+static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContext &context, CreateSecretInput &input) {
+	auto tenant_id = input.options.find("tenant_id");
+	auto client_id = input.options.find("client_id");
+	auto client_secret = input.options.find("client_secret");
+	auto client_certificate_path = input.options.find("client_certificate_path");
+
+	auto account_name = input.options.find("account_name");
+	auto azure_endpoint = input.options.find("azure_endpoint");
+
+	auto scope = input.scope;
+	if (scope.empty()) {
+		scope.push_back("azure://");
+		scope.push_back("az://");
+	}
+
+	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
+
+	FillWithAzureProxyInfo(context, input, *result);
+
+	// Add config to kv secret
+	if (tenant_id != input.options.end()) {
+		result->secret_map["tenant_id"] = tenant_id->second;
+	}
+	if (client_id != input.options.end()) {
+		result->secret_map["client_id"] = client_id->second;
+	}
+	if (client_secret != input.options.end()) {
+		result->secret_map["client_secret"] = client_secret->second;
+		result->redact_keys.insert("client_secret");
+	}
+	if (client_certificate_path != input.options.end()) {
+		result->secret_map["client_certificate_path"] = client_certificate_path->second;
+		result->redact_keys.insert("client_certificate_path");
+	}
+
+	if (account_name != input.options.end()) {
+		result->secret_map["account_name"] = account_name->second;
+	}
+	if (azure_endpoint != input.options.end()) {
+		result->secret_map["azure_endpoint"] = azure_endpoint->second;
+	}
+
+	return std::move(result);
+}
+
 static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
 	// Register azure common parameters
 	function.named_parameters["account_name"] = LogicalType::VARCHAR;
@@ -119,6 +164,16 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	cred_chain_function.named_parameters["azure_endpoint"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(cred_chain_function);
 	ExtensionUtil::RegisterFunction(instance, cred_chain_function);
+
+	CreateSecretFunction service_principal_function = {type, "service_principal",
+	                                                   CreateAzureSecretFromServicePrincipal};
+	service_principal_function.named_parameters["tenant_id"] = LogicalType::VARCHAR;
+	service_principal_function.named_parameters["client_id"] = LogicalType::VARCHAR;
+	service_principal_function.named_parameters["client_secret"] = LogicalType::VARCHAR;
+	service_principal_function.named_parameters["client_certificate_path"] = LogicalType::VARCHAR;
+	service_principal_function.named_parameters["azure_endpoint"] = LogicalType::VARCHAR;
+	RegisterCommonSecretParameters(service_principal_function);
+	ExtensionUtil::RegisterFunction(instance, service_principal_function);
 }
 
 } // namespace duckdb
