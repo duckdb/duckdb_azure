@@ -70,8 +70,6 @@ public:
 
 class AzureStorageFileSystem : public FileSystem {
 public:
-	~AzureStorageFileSystem();
-
 	duckdb::unique_ptr<FileHandle> OpenFile(const string &path, uint8_t flags, FileLockType lock = DEFAULT_LOCK,
 	                                        FileCompressionType compression = DEFAULT_COMPRESSION,
 	                                        FileOpener *opener = nullptr) final;
@@ -101,12 +99,6 @@ public:
 	}
 
 	static void Verify();
-
-public:
-	// guarded global variables are used here to share the http_state when parsing multiple files
-	static mutex azure_log_lock;
-	static weak_ptr<HTTPState> http_state;
-	static bool listener_set;
 
 protected:
 	static AzureParsedUrl ParseUrl(const string &url);

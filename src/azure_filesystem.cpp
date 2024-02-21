@@ -14,40 +14,12 @@
 #include "duckdb/main/client_data.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include <azure/storage/blobs.hpp>
-#include <azure/core/diagnostics/logger.hpp>
 #include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
 
 namespace duckdb {
-
-using namespace Azure::Core::Diagnostics;
-
-// globals for collection Azure SDK logging information
-mutex AzureStorageFileSystem::azure_log_lock = {};
-weak_ptr<HTTPState> AzureStorageFileSystem::http_state = std::weak_ptr<HTTPState>();
-bool AzureStorageFileSystem::listener_set = false;
-
-// TODO: extract received/sent bytes information
-static void Log(Logger::Level level, std::string const &message) {
-	auto http_state_ptr = AzureStorageFileSystem::http_state;
-	auto http_state = http_state_ptr.lock();
-	if (!http_state && AzureStorageFileSystem::listener_set) {
-		throw std::runtime_error("HTTP state weak pointer failed to lock");
-	}
-	if (message.find("Request") != std::string::npos) {
-		if (message.find("Request : HEAD") != std::string::npos) {
-			http_state->head_count++;
-		} else if (message.find("Request : GET") != std::string::npos) {
-			http_state->get_count++;
-		} else if (message.find("Request : POST") != std::string::npos) {
-			http_state->post_count++;
-		} else if (message.find("Request : PUT") != std::string::npos) {
-			http_state->put_count++;
-		}
-	}
-}
 
 static AzureReadOptions ParseAzureReadOptions(FileOpener *opener) {
 	AzureReadOptions options;
@@ -140,11 +112,6 @@ AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, ui
 }
 
 //////// AzureStorageFileSystem ////////
-AzureStorageFileSystem::~AzureStorageFileSystem() {
-	Logger::SetListener(nullptr);
-	AzureStorageFileSystem::listener_set = false;
-}
-
 unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const string &path, uint8_t flags,
                                                                         FileLockType lock,
                                                                         FileCompressionType compression,
@@ -166,24 +133,6 @@ unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const st
 unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, uint8_t flags, FileLockType lock,
                                                         FileCompressionType compression, FileOpener *opener) {
 	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
-
-	Value value;
-	bool enable_http_stats = false;
-	auto context = FileOpener::TryGetClientContext(opener);
-	if (FileOpener::TryGetCurrentSetting(opener, "azure_http_stats", value)) {
-		enable_http_stats = value.GetValue<bool>();
-	}
-
-	if (context && enable_http_stats) {
-		unique_lock<mutex> lck(AzureStorageFileSystem::azure_log_lock);
-		AzureStorageFileSystem::http_state = HTTPState::TryGetState(opener);
-
-		if (!AzureStorageFileSystem::listener_set) {
-			Logger::SetListener(std::bind(&Log, std::placeholders::_1, std::placeholders::_2));
-			Logger::SetLevel(Logger::Level::Verbose);
-			AzureStorageFileSystem::listener_set = true;
-		}
-	}
 
 	if (flags & FileFlags::FILE_FLAGS_WRITE) {
 		throw NotImplementedException("Writing to Azure containers is currently not supported");

@@ -9,6 +9,7 @@
 #include "duckdb/main/database.hpp"
 #include "duckdb/main/secret/secret.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
+#include "http_state_policy.hpp"
 
 #include <azure/core/credentials/token_credential_options.hpp>
 #include <azure/core/http/curl_transport.hpp>
@@ -78,9 +79,17 @@ static std::string AccountUrl(const KeyValueSecret &secret, const std::string &p
 }
 
 static Azure::Storage::Blobs::BlobClientOptions
-ToBlobClientOptions(const Azure::Core::Http::Policies::TransportOptions &transport_options) {
+ToBlobClientOptions(const Azure::Core::Http::Policies::TransportOptions &transport_options,
+                    std::shared_ptr<HTTPState> http_state) {
 	Azure::Storage::Blobs::BlobClientOptions options;
 	options.Transport = transport_options;
+	if (nullptr != http_state) {
+		//  Because we mainly want to have that on what has been needed and not on
+		// what has been used on the network we register the policy on `PerOperationPolicies`
+		// part and not the `PerRetryPolicies`. Network issues will result in retry that can
+		// increase the input/output but will not be displayed in the EXPLAIN summary.
+		options.PerOperationPolicies.emplace_back(new HttpStatePolicy(std::move(http_state)));
+	}
 	return options;
 }
 
@@ -89,6 +98,21 @@ ToTokenCredentialOptions(const Azure::Core::Http::Policies::TransportOptions &tr
 	Azure::Core::Credentials::TokenCredentialOptions options;
 	options.Transport = transport_options;
 	return options;
+}
+
+static std::shared_ptr<HTTPState> GetHttpState(FileOpener *opener) {
+	Value value;
+	bool enable_http_stats = false;
+	if (FileOpener::TryGetCurrentSetting(opener, "azure_http_stats", value)) {
+		enable_http_stats = value.GetValue<bool>();
+	}
+
+	std::shared_ptr<HTTPState> http_state;
+	if (enable_http_stats) {
+		http_state = HTTPState::TryGetState(opener);
+	}
+
+	return http_state;
 }
 
 static std::shared_ptr<Azure::Core::Credentials::TokenCredential>
@@ -253,14 +277,14 @@ GetStorageAccountClientFromConfigProvider(FileOpener *opener, const KeyValueSecr
 			                            provided_storage_account);
 		}
 
-		auto blob_options = ToBlobClientOptions(transport_options);
+		auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
 		return Azure::Storage::Blobs::BlobServiceClient::CreateFromConnectionString(connection_string, blob_options);
 	}
 
 	// Default provider (config) with no connection string => public storage account
 
 	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
-	auto blob_options = ToBlobClientOptions(transport_options);
+	auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, blob_options);
 }
 
@@ -281,7 +305,7 @@ GetStorageAccountClientFromCredentialChainProvider(FileOpener *opener, const Key
 
 	// Connect to storage account
 	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
-	auto blob_options = ToBlobClientOptions(transport_options);
+	auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, std::move(credential), blob_options);
 }
 
@@ -305,7 +329,7 @@ GetStorageAccountClientFromServicePrincipalProvider(FileOpener *opener, const Ke
 	                                               client_certificate_path, transport_options);
 
 	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
-	auto blob_options = ToBlobClientOptions(transport_options);
+	auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Blobs::BlobServiceClient {account_url, token_credential, blob_options};
 }
 
@@ -343,7 +367,7 @@ static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(FileOpen
                                                                         const std::string &provided_storage_account,
                                                                         const std::string &provided_endpoint) {
 	auto transport_options = GetTransportOptions(opener);
-	auto blob_options = ToBlobClientOptions(transport_options);
+	auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
 
 	auto connection_string = TryGetCurrentSetting(opener, "azure_storage_connection_string");
 	if (!connection_string.empty() &&
