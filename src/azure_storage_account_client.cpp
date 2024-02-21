@@ -35,6 +35,45 @@ static std::string TryGetCurrentSetting(FileOpener *opener, const std::string &n
 	return "";
 }
 
+static bool ConnectionStringMatchStorageAccountName(const std::string &connection_string,
+                                                    const std::string &provided_storage_account) {
+	if (provided_storage_account.empty()) {
+		return true;
+	}
+
+	auto storage_account_name_pos = connection_string.find("AccountName=");
+	if (storage_account_name_pos == std::string::npos) {
+		throw InvalidInputException("A invalid connection string has been provided.");
+	}
+	return 0 == connection_string.compare(storage_account_name_pos + 12, provided_storage_account.size(),
+	                                      provided_storage_account);
+}
+
+static std::string KVSEndpoint(const KeyValueSecret &secret, const std::string &provided_endpoint) {
+	if (provided_endpoint.empty()) {
+		auto endpoint_value = secret.TryGetValue("endpoint");
+		if (endpoint_value.IsNull()) {
+			return DEFAULT_ENDPOINT;
+		} else {
+			return endpoint_value.ToString();
+		}
+	}
+	return provided_endpoint;
+}
+
+static std::string KVSStorageAccount(const KeyValueSecret &secret, const std::string &provided_storage_account) {
+	if (provided_storage_account.empty()) {
+		return secret.TryGetValue("account_name", true).ToString();
+	}
+	return provided_storage_account;
+}
+
+static std::string AccountUrl(const KeyValueSecret &secret, const std::string &provided_storage_account,
+                              const std::string &provided_endpoint) {
+	return "https://" + KVSStorageAccount(secret, provided_storage_account) + "." +
+	       KVSEndpoint(secret, provided_endpoint);
+}
+
 static Azure::Storage::Blobs::BlobClientOptions
 ToBlobClientOptions(const Azure::Core::Http::Policies::TransportOptions &transport_options) {
 	Azure::Storage::Blobs::BlobClientOptions options;
@@ -66,7 +105,7 @@ CreateChainedTokenCredential(const std::string &chain,
 			sources.push_back(std::make_shared<Azure::Identity::EnvironmentCredential>(credential_options));
 		} else if (item == "default") {
 			sources.push_back(std::make_shared<Azure::Identity::DefaultAzureCredential>(credential_options));
-		} else if (item != "none") {
+		} else {
 			throw InvalidInputException("Unknown credential provider found: " + item);
 		}
 	}
@@ -118,35 +157,33 @@ static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(const K
 }
 
 static Azure::Storage::Blobs::BlobServiceClient
-GetStorageAccountClientFromConfigProvider(const KeyValueSecret &secret) {
+GetStorageAccountClientFromConfigProvider(const KeyValueSecret &secret, const std::string &provided_storage_account,
+                                          const std::string &provided_endpoint) {
 	auto transport_options = GetTransportOptions(secret);
 
 	// If connection string, we're done heres
-	auto connection_string = secret.TryGetValue("connection_string");
-	if (!connection_string.IsNull()) {
+	auto connection_string_val = secret.TryGetValue("connection_string");
+	if (!connection_string_val.IsNull()) {
+		auto connection_string = connection_string_val.ToString();
+		if (!ConnectionStringMatchStorageAccountName(connection_string, provided_storage_account)) {
+			throw InvalidInputException("The provided connection string does not match the storage account named %s",
+			                            provided_storage_account);
+		}
+
 		auto blob_options = ToBlobClientOptions(transport_options);
-		return Azure::Storage::Blobs::BlobServiceClient::CreateFromConnectionString(connection_string.ToString(),
-		                                                                            blob_options);
+		return Azure::Storage::Blobs::BlobServiceClient::CreateFromConnectionString(connection_string, blob_options);
 	}
 
 	// Default provider (config) with no connection string => public storage account
-	auto account_name = secret.TryGetValue("account_name", true);
 
-	std::string endpoint = DEFAULT_ENDPOINT;
-	auto endpoint_value = secret.TryGetValue("endpoint");
-	if (!endpoint_value.IsNull()) {
-		endpoint = endpoint_value.ToString();
-	}
-
-	auto account_url = "https://" + account_name.ToString() + "." + endpoint;
+	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
 	auto blob_options = ToBlobClientOptions(transport_options);
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, blob_options);
 }
 
-static Azure::Storage::Blobs::BlobServiceClient
-GetStorageAccountClientFromCredentialChainProvider(const KeyValueSecret &secret) {
+static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClientFromCredentialChainProvider(
+    const KeyValueSecret &secret, const std::string &provided_storage_account, const std::string &provided_endpoint) {
 	auto transport_options = GetTransportOptions(secret);
-	auto account_name = secret.TryGetValue("account_name", true);
 
 	std::string chain = "default";
 	auto chain_value = secret.TryGetValue("chain");
@@ -154,23 +191,17 @@ GetStorageAccountClientFromCredentialChainProvider(const KeyValueSecret &secret)
 		chain = chain_value.ToString();
 	}
 
-	std::string endpoint = DEFAULT_ENDPOINT;
-	auto endpoint_value = secret.TryGetValue("endpoint");
-	if (!endpoint_value.IsNull()) {
-		endpoint = endpoint_value.ToString();
-	}
-
 	// Create credential chain
 	auto credential = CreateChainedTokenCredential(chain, transport_options);
 
 	// Connect to storage account
-	auto account_url = "https://" + account_name.ToString() + "." + endpoint;
+	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
 	auto blob_options = ToBlobClientOptions(transport_options);
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, std::move(credential), blob_options);
 }
 
-static Azure::Storage::Blobs::BlobServiceClient
-GetStorageAccountClientFromServicePrincipalProvider(const KeyValueSecret &secret) {
+static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClientFromServicePrincipalProvider(
+    const KeyValueSecret &secret, const std::string &provided_storage_account, const std::string &provided_endpoint) {
 	auto transport_options = GetTransportOptions(secret);
 
 	constexpr bool error_on_missing = true;
@@ -186,28 +217,22 @@ GetStorageAccountClientFromServicePrincipalProvider(const KeyValueSecret &secret
 	auto token_credential = CreateClientCredential(tenant_id.ToString(), client_id.ToString(), client_secret,
 	                                               client_certificate_path, transport_options);
 
-	auto account_name = secret.TryGetValue("account_name", error_on_missing);
-
-	std::string endpoint = DEFAULT_ENDPOINT;
-	auto endpoint_value = secret.TryGetValue("endpoint");
-	if (!endpoint_value.IsNull()) {
-		endpoint = endpoint_value.ToString();
-	}
-
-	auto account_url = "https://" + account_name.ToString() + "." + endpoint;
+	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
 	auto blob_options = ToBlobClientOptions(transport_options);
 	return Azure::Storage::Blobs::BlobServiceClient {account_url, token_credential, blob_options};
 }
 
-static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(const KeyValueSecret &secret) {
+static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(const KeyValueSecret &secret,
+                                                                        const std::string &provided_storage_account,
+                                                                        const std::string &provided_endpoint) {
 	auto &provider = secret.GetProvider();
 	// default provider
 	if (provider == "config") {
-		return GetStorageAccountClientFromConfigProvider(secret);
+		return GetStorageAccountClientFromConfigProvider(secret, provided_storage_account, provided_endpoint);
 	} else if (provider == "credential_chain") {
-		return GetStorageAccountClientFromCredentialChainProvider(secret);
+		return GetStorageAccountClientFromCredentialChainProvider(secret, provided_storage_account, provided_endpoint);
 	} else if (provider == "service_principal") {
-		return GetStorageAccountClientFromServicePrincipalProvider(secret);
+		return GetStorageAccountClientFromServicePrincipalProvider(secret, provided_storage_account, provided_endpoint);
 	}
 
 	throw InvalidInputException("Unsupported provider type %s for azure", provider);
@@ -235,21 +260,34 @@ static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(FileOpe
 	return transport_options;
 }
 
-static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(FileOpener *opener) {
+static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(FileOpener *opener,
+                                                                        const std::string &provided_storage_account,
+                                                                        const std::string &provided_endpoint) {
 	auto transport_options = GetTransportOptions(opener);
 	auto blob_options = ToBlobClientOptions(transport_options);
 
 	auto connection_string = TryGetCurrentSetting(opener, "azure_storage_connection_string");
-	if (!connection_string.empty()) {
+	if (!connection_string.empty() &&
+	    ConnectionStringMatchStorageAccountName(connection_string, provided_storage_account)) {
 		return Azure::Storage::Blobs::BlobServiceClient::CreateFromConnectionString(connection_string, blob_options);
 	}
 
-	auto endpoint = TryGetCurrentSetting(opener, "azure_endpoint");
-	if (endpoint.empty()) {
-		endpoint = DEFAULT_ENDPOINT;
+	std::string endpoint;
+	if (provided_endpoint.empty()) {
+		endpoint = TryGetCurrentSetting(opener, "azure_endpoint");
+		if (endpoint.empty()) {
+			endpoint = DEFAULT_ENDPOINT;
+		}
+	} else {
+		endpoint = provided_endpoint;
 	}
 
-	auto azure_account_name = TryGetCurrentSetting(opener, "azure_account_name");
+	std::string azure_account_name;
+	if (provided_storage_account.empty()) {
+		azure_account_name = TryGetCurrentSetting(opener, "azure_account_name");
+	} else {
+		azure_account_name = provided_storage_account;
+	}
 	if (azure_account_name.empty()) {
 		throw InvalidInputException("No valid Azure credentials found!");
 	}
@@ -267,22 +305,57 @@ static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(FileOpen
 	return Azure::Storage::Blobs::BlobServiceClient {account_url, blob_options};
 }
 
-Azure::Storage::Blobs::BlobServiceClient ConnectToStorageAccount(FileOpener *opener, const std::string &path) {
+Azure::Storage::Blobs::BlobServiceClient ConnectToStorageAccount(FileOpener *opener, const std::string &path,
+                                                                 const std::string &provided_storage_account,
+                                                                 const std::string &provided_endpoint) {
 	// Lookup Secret
 	auto context = opener->TryGetClientContext();
 
 	// Firstly, try to use the auth from the secret
 	if (context) {
 		auto transaction = CatalogTransaction::GetSystemCatalogTransaction(*context);
-		auto secret_lookup = context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
-		if (secret_lookup.HasMatch()) {
-			const auto &base_secret = secret_lookup.GetSecret();
-			return GetStorageAccountClient(dynamic_cast<const KeyValueSecret &>(base_secret));
+		if (provided_storage_account.empty()) {
+			auto secret_lookup = context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
+			if (secret_lookup.HasMatch()) {
+				const auto &base_secret = secret_lookup.GetSecret();
+				return GetStorageAccountClient(dynamic_cast<const KeyValueSecret &>(base_secret),
+				                               provided_storage_account, provided_endpoint);
+			}
+		} else {
+			/** Use the storage account name as path first, because internally the secret manager will return the secret
+			 * name that start/match the most with it.
+			 *
+			 * Note that when `provided_storage_account` is specified it mean that the path look like this:
+			 * azure://mycontainer@storageaccountname.blob.azure.com/
+			 *
+			 * So if user specify a SCOPE, he can do like this:
+			 * 1. `azure://` will match all paths.
+			 * 2. `azure://mycontainer` will match all container named `mycontainer` whatever is the storage account
+			 *    name.
+			 * 3. `azure://mycontainer@storageaccountname` will match the container `mycontainer` of the storage account
+			 *    `storageaccountname`.
+			 *
+			 * By adding the `azure://\*@storageaccountname` artificially it allow user to define a scope for a all
+			 * containers of a storage account.
+			 */
+			SecretMatch best_match;
+			for (const auto &p :
+			     {path, "azure://*@" + provided_storage_account, "az://*@" + provided_storage_account}) {
+				auto match = context->db->config.secret_manager->LookupSecret(transaction, p, "azure");
+				if (match.HasMatch() && match.score > best_match.score) {
+					best_match = match;
+				}
+			}
+			if (best_match.HasMatch()) {
+				const auto &base_secret = best_match.GetSecret();
+				return GetStorageAccountClient(dynamic_cast<const KeyValueSecret &>(base_secret),
+				                               provided_storage_account, provided_endpoint);
+			}
 		}
 	}
 
 	// No secret found try to connect with variables
-	return GetStorageAccountClient(opener);
+	return GetStorageAccountClient(opener, provided_storage_account, provided_endpoint);
 }
 
 } // namespace duckdb

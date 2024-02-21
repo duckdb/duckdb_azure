@@ -26,7 +26,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	config.AddExtensionOption("azure_credential_chain",
 	                          "Ordered list of Azure credential providers, in string format separated by ';'. E.g. "
 	                          "'cli;managed_identity;env'",
-	                          LogicalType::VARCHAR, "none");
+	                          LogicalType::VARCHAR, nullptr);
 	config.AddExtensionOption("azure_endpoint",
 	                          "Override the azure endpoint for when the Azure credential providers are used.",
 	                          LogicalType::VARCHAR, "blob.core.windows.net");
