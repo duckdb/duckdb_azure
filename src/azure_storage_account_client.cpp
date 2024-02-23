@@ -84,8 +84,8 @@ ToBlobClientOptions(const Azure::Core::Http::Policies::TransportOptions &transpo
 	Azure::Storage::Blobs::BlobClientOptions options;
 	options.Transport = transport_options;
 	if (nullptr != http_state) {
-		//  Because we mainly want to have that on what has been needed and not on
-		// what has been used on the network we register the policy on `PerOperationPolicies`
+		// Because we mainly want to have stats on what has been needed and not on
+		// what has been used on the network, we register the policy on `PerOperationPolicies`
 		// part and not the `PerRetryPolicies`. Network issues will result in retry that can
 		// increase the input/output but will not be displayed in the EXPLAIN summary.
 		options.PerOperationPolicies.emplace_back(new HttpStatePolicy(std::move(http_state)));
