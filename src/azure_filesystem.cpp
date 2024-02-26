@@ -407,7 +407,7 @@ std::shared_ptr<AzureContextState> AzureStorageFileSystem::CreateStorageContext(
 	auto azure_read_options = ParseAzureReadOptions(opener);
 
 	return std::make_shared<AzureContextState>(
-	    ConnectToStorageAccount(opener, path, parsed_url.storage_account_name, parsed_url.endpoint),
+	    ConnectToStorageAccount(opener, path, parsed_url),
 	    azure_read_options);
 }
 

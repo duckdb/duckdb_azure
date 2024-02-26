@@ -409,20 +409,19 @@ static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(FileOpen
 }
 
 Azure::Storage::Blobs::BlobServiceClient ConnectToStorageAccount(FileOpener *opener, const std::string &path,
-                                                                 const std::string &provided_storage_account,
-                                                                 const std::string &provided_endpoint) {
+                                                                 const AzureParsedUrl &azure_parsed_url) {
 	// Lookup Secret
 	auto context = opener->TryGetClientContext();
 
 	// Firstly, try to use the auth from the secret
 	if (context) {
 		auto transaction = CatalogTransaction::GetSystemCatalogTransaction(*context);
-		if (provided_storage_account.empty()) {
+		if (azure_parsed_url.storage_account_name.empty()) {
 			auto secret_lookup = context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
 			if (secret_lookup.HasMatch()) {
 				const auto &base_secret = secret_lookup.GetSecret();
 				return GetStorageAccountClient(opener, dynamic_cast<const KeyValueSecret &>(base_secret),
-				                               provided_storage_account, provided_endpoint);
+				                               azure_parsed_url.storage_account_name, azure_parsed_url.endpoint);
 			}
 		} else {
 			/** Use the storage account name as path first, because internally the secret manager will return the secret
@@ -442,8 +441,8 @@ Azure::Storage::Blobs::BlobServiceClient ConnectToStorageAccount(FileOpener *ope
 			 * containers of a storage account.
 			 */
 			SecretMatch best_match;
-			for (const auto &p :
-			     {path, "azure://*@" + provided_storage_account, "az://*@" + provided_storage_account}) {
+			for (const auto &p : {path, azure_parsed_url.prefix + "*@" + azure_parsed_url.storage_account_name +
+			                                '.' + azure_parsed_url.endpoint + '/' + azure_parsed_url.path}) {
 				auto match = context->db->config.secret_manager->LookupSecret(transaction, p, "azure");
 				if (match.HasMatch() && match.score > best_match.score) {
 					best_match = match;
@@ -452,13 +451,13 @@ Azure::Storage::Blobs::BlobServiceClient ConnectToStorageAccount(FileOpener *ope
 			if (best_match.HasMatch()) {
 				const auto &base_secret = best_match.GetSecret();
 				return GetStorageAccountClient(opener, dynamic_cast<const KeyValueSecret &>(base_secret),
-				                               provided_storage_account, provided_endpoint);
+				                               azure_parsed_url.storage_account_name, azure_parsed_url.endpoint);
 			}
 		}
 	}
 
 	// No secret found try to connect with variables
-	return GetStorageAccountClient(opener, provided_storage_account, provided_endpoint);
+	return GetStorageAccountClient(opener, azure_parsed_url.storage_account_name, azure_parsed_url.endpoint);
 }
 
 } // namespace duckdb
