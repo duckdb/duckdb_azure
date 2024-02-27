@@ -1,5 +1,5 @@
 # name: test/sql/cloud/cli_auth.test
-# description: test azure extension authentication
+# description: test cli authentication
 # group: [azure]
 
 require azure

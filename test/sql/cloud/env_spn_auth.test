@@ -1,5 +1,5 @@
-# name: test/sql/azure_spn.test
-# description: test azure extension with service principal authentication
+# name: test/sql/cloud/env_spn_auth.test
+# description: test service principal authentication through env vars
 # group: [azure]
 
 require azure

@@ -1,5 +1,5 @@
 name: Azure (cloud) functional tests
-on: [push, pull_request,repository_dispatch]
+on: [push, repository_dispatch]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
   cancel-in-progress: true
@@ -16,7 +16,6 @@ jobs:
       VCPKG_TARGET_TRIPLET: 'x64-linux'
       GEN: Ninja
       VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-      HTTP_PROXY_RUNNING: '1'
 
     steps:
     - uses: actions/checkout@v3
@@ -51,7 +50,7 @@ jobs:
         AZURE_TENANT_ID: ${{secrets.AZURE_TENANT_ID}}
         AZURE_STORAGE_ACCOUNT: ${{secrets.AZURE_STORAGE_ACCOUNT}}
       run: |
-        python3 duckdb/scripts/run_tests_one_by_one.py ./build/release/test/unittest "*test/sql/cloud/*"
+        python3 duckdb/scripts/run_tests_one_by_one.py ./build/release/test/unittest "*test/sql/*"
 
     - name: Test with SPN logged in in azure-cli
       env:
@@ -59,5 +58,5 @@ jobs:
         DUCKDB_AZ_CLI_LOGGED_IN: 1
       run: |
         az login --service-principal -u ${{secrets.AZURE_CLIENT_ID}} -p ${{secrets.AZURE_CLIENT_SECRET}} --tenant ${{secrets.AZURE_TENANT_ID}}
-        python3 duckdb/scripts/run_tests_one_by_one.py ./build/release/test/unittest "*test/sql/cloud/*"
+        python3 duckdb/scripts/run_tests_one_by_one.py ./build/release/test/unittest "*test/sql/*"
         az logout
