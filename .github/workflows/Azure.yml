@@ -1,0 +1,56 @@
+name: Azure (cloud) functional tests
+on: [push, pull_request,repository_dispatch]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  azure-tests-linux:
+    name: Azure tests (Linux)
+    runs-on: ubuntu-latest
+    container: 'quay.io/pypa/manylinux2014_x86_64'
+    env:
+      VCPKG_TARGET_TRIPLET: 'x64-linux'
+      GEN: Ninja
+      VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+      HTTP_PROXY_RUNNING: '1'
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        submodules: 'true'
+
+    - name: install Azure test service
+      run: |
+        echo -e "[azure-cli]\nname=Azure CLI\nbaseurl=https://packages.microsoft.com/yumrepos/azure-cli\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc" | tee /etc/yum.repos.d/azure-cli.repo
+        yum install -y azure-cli
+
+    - name: Setup ManyLinux2014
+      run: |
+        ./duckdb/scripts/setup_manylinux2014.sh general aws-cli ccache ssh openssl python_alias
+
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11.1
+      with:
+        vcpkgGitCommitId: a1a1cbc975abf909a6c8985a6a2b8fe20bbd9bd6
+
+    # Build extension
+    - name: Build extension
+      env:
+        GEN: ninja
+      run: |
+        make release
+
+    - name: Test with service principal
+      env:
+        AZURE_CLIENT_ID: ${{secrets.AZURE_CLIENT_ID}}
+        AZURE_CLIENT_SECRET: ${{secrets.AZURE_CLIENT_SECRET}}
+        AZURE_TENANT_ID: ${{secrets.AZURE_TENANT_ID}}
+        AZURE_STORAGE_ACCOUNT: ${{secrets.AZURE_STORAGE_ACCOUNT}}
+      run: |
+        ./build/release/duckdb -c "CREATE PERSISTENT SECRET s1 (TYPE AZURE, PROVIDER SERVICE_PRINCIPAL, TENANT_ID '$AZURE_TENANT_ID', CLIENT_ID '$AZURE_CLIENT_ID', CLIENT_SECRET '$AZURE_CLIENT_SECRET', ACCOUNT_NAME '$AZURE_STORAGE_ACCOUNT');"
+        ./build/release/duckdb -c "SELECT count(*) FROM 'azure://testing-private/l.csv';"
