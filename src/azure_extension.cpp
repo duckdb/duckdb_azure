@@ -31,9 +31,7 @@ static void LoadInternal(DatabaseInstance &instance) {
 	                          "Override the azure endpoint for when the Azure credential providers are used.",
 	                          LogicalType::VARCHAR, "blob.core.windows.net");
 	config.AddExtensionOption("azure_http_stats",
-	                          "Include http info from the Azure Storage in the explain analyze statement. "
-	                          "Notice that the result may be incorrect for more than one active DuckDB connection "
-	                          "and the calculation of total received and sent bytes is not yet implemented.",
+	                          "Include http info from the Azure Storage in the explain analyze statement.",
 	                          LogicalType::BOOLEAN, false);
 	config.AddExtensionOption("azure_context_caching",
 	                          "Enable/disable the caching of some context when performing queries. "

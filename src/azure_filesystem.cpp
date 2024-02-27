@@ -14,40 +14,12 @@
 #include "duckdb/main/client_data.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include <azure/storage/blobs.hpp>
-#include <azure/core/diagnostics/logger.hpp>
 #include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
 
 namespace duckdb {
-
-using namespace Azure::Core::Diagnostics;
-
-// globals for collection Azure SDK logging information
-mutex AzureStorageFileSystem::azure_log_lock = {};
-weak_ptr<HTTPState> AzureStorageFileSystem::http_state = std::weak_ptr<HTTPState>();
-bool AzureStorageFileSystem::listener_set = false;
-
-// TODO: extract received/sent bytes information
-static void Log(Logger::Level level, std::string const &message) {
-	auto http_state_ptr = AzureStorageFileSystem::http_state;
-	auto http_state = http_state_ptr.lock();
-	if (!http_state && AzureStorageFileSystem::listener_set) {
-		throw std::runtime_error("HTTP state weak pointer failed to lock");
-	}
-	if (message.find("Request") != std::string::npos) {
-		if (message.find("Request : HEAD") != std::string::npos) {
-			http_state->head_count++;
-		} else if (message.find("Request : GET") != std::string::npos) {
-			http_state->get_count++;
-		} else if (message.find("Request : POST") != std::string::npos) {
-			http_state->post_count++;
-		} else if (message.find("Request : PUT") != std::string::npos) {
-			http_state->put_count++;
-		}
-	}
-}
 
 static AzureReadOptions ParseAzureReadOptions(FileOpener *opener) {
 	AzureReadOptions options;
@@ -97,8 +69,9 @@ static bool Match(vector<string>::const_iterator key, vector<string>::const_iter
 }
 
 //////// AzureContextState ////////
-AzureContextState::AzureContextState(Azure::Storage::Blobs::BlobServiceClient client)
-    : service_client(client), is_valid(true) {
+AzureContextState::AzureContextState(Azure::Storage::Blobs::BlobServiceClient client,
+                                     const AzureReadOptions &azure_read_options)
+    : read_options(azure_read_options), service_client(std::move(client)), is_valid(true) {
 }
 
 Azure::Storage::Blobs::BlobContainerClient
@@ -119,7 +92,7 @@ AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, ui
                                                Azure::Storage::Blobs::BlobClient blob_client,
                                                const AzureReadOptions &read_options)
     : FileHandle(fs, std::move(path_p)), flags(flags), length(0), last_modified(time_t()), buffer_available(0),
-      buffer_idx(0), file_offset(0), buffer_start(0), buffer_end(0), blob_client(blob_client),
+      buffer_idx(0), file_offset(0), buffer_start(0), buffer_end(0), blob_client(std::move(blob_client)),
       read_options(read_options) {
 	try {
 		auto res = blob_client.GetProperties();
@@ -139,11 +112,6 @@ AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, ui
 }
 
 //////// AzureStorageFileSystem ////////
-AzureStorageFileSystem::~AzureStorageFileSystem() {
-	Logger::SetListener(nullptr);
-	AzureStorageFileSystem::listener_set = false;
-}
-
 unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const string &path, uint8_t flags,
                                                                         FileLockType lock,
                                                                         FileCompressionType compression,
@@ -155,35 +123,16 @@ unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const st
 	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
 
 	auto parsed_url = ParseUrl(path);
-	auto storage_account = GetOrCreateStorageAccountContext(opener, path, parsed_url);
-	auto container = storage_account->GetBlobContainerClient(parsed_url.container);
+	auto storage_context = GetOrCreateStorageContext(opener, path, parsed_url);
+	auto container = storage_context->GetBlobContainerClient(parsed_url.container);
 	auto blob_client = container.GetBlockBlobClient(parsed_url.path);
 
-	auto read_options = ParseAzureReadOptions(opener);
-	return make_uniq<AzureStorageFileHandle>(*this, path, flags, blob_client, read_options);
+	return make_uniq<AzureStorageFileHandle>(*this, path, flags, blob_client, storage_context->read_options);
 }
 
 unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, uint8_t flags, FileLockType lock,
                                                         FileCompressionType compression, FileOpener *opener) {
 	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
-
-	Value value;
-	bool enable_http_stats = false;
-	auto context = FileOpener::TryGetClientContext(opener);
-	if (FileOpener::TryGetCurrentSetting(opener, "azure_http_stats", value)) {
-		enable_http_stats = value.GetValue<bool>();
-	}
-
-	if (context && enable_http_stats) {
-		unique_lock<mutex> lck(AzureStorageFileSystem::azure_log_lock);
-		AzureStorageFileSystem::http_state = HTTPState::TryGetState(opener);
-
-		if (!AzureStorageFileSystem::listener_set) {
-			Logger::SetListener(std::bind(&Log, std::placeholders::_1, std::placeholders::_2));
-			Logger::SetLevel(Logger::Level::Verbose);
-			AzureStorageFileSystem::listener_set = true;
-		}
-	}
 
 	if (flags & FileFlags::FILE_FLAGS_WRITE) {
 		throw NotImplementedException("Writing to Azure containers is currently not supported");
@@ -230,7 +179,7 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 	}
 
 	auto azure_url = AzureStorageFileSystem::ParseUrl(path);
-	auto storage_account = GetOrCreateStorageAccountContext(opener, path, azure_url);
+	auto storage_context = GetOrCreateStorageContext(opener, path, azure_url);
 
 	// Azure matches on prefix, not glob pattern, so we take a substring until the first wildcard
 	auto first_wildcard_pos = azure_url.path.find_first_of("*[\\");
@@ -239,9 +188,8 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 	}
 
 	string shared_path = azure_url.path.substr(0, first_wildcard_pos);
-	auto container_client = storage_account->GetBlobContainerClient(azure_url.container);
+	auto container_client = storage_context->GetBlobContainerClient(azure_url.container);
 
-	// vector<Azure::Storage::Blobs::Models::BlobItem> found_keys;
 	const auto pattern_splits = StringUtil::Split(azure_url.path, "/");
 	vector<string> result;
 
@@ -417,9 +365,9 @@ AzureParsedUrl AzureStorageFileSystem::ParseUrl(const string &url) {
 	return {container, storage_account_name, endpoint, prefix, path};
 }
 
-std::shared_ptr<AzureContextState>
-AzureStorageFileSystem::GetOrCreateStorageAccountContext(FileOpener *opener, const std::string &path,
-                                                         const AzureParsedUrl &parsed_url) {
+std::shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(FileOpener *opener,
+                                                                                     const std::string &path,
+                                                                                     const AzureParsedUrl &parsed_url) {
 	Value value;
 	bool azure_context_caching = true;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_context_caching", value)) {
@@ -433,8 +381,7 @@ AzureStorageFileSystem::GetOrCreateStorageAccountContext(FileOpener *opener, con
 		auto &registered_state = client_context->registered_state;
 		auto storage_account_it = registered_state.find(parsed_url.storage_account_name);
 		if (storage_account_it == registered_state.end()) {
-			result = std::make_shared<AzureContextState>(
-			    ConnectToStorageAccount(opener, path, parsed_url.storage_account_name, parsed_url.endpoint));
+			result = CreateStorageContext(opener, path, parsed_url);
 			registered_state.insert(std::make_pair(parsed_url.storage_account_name, result));
 		} else {
 			auto *azure_context_state = static_cast<AzureContextState *>(storage_account_it->second.get());
@@ -442,19 +389,26 @@ AzureStorageFileSystem::GetOrCreateStorageAccountContext(FileOpener *opener, con
 			// we do so because between queries the user can change the secret/variable that has been set
 			// the side effect of that is that we will reconnect (potentially retrieve a new token) on each request
 			if (!azure_context_state->IsValid()) {
-				result = std::make_shared<AzureContextState>(
-				    ConnectToStorageAccount(opener, path, parsed_url.storage_account_name, parsed_url.endpoint));
+				result = CreateStorageContext(opener, path, parsed_url);
 				registered_state[parsed_url.storage_account_name] = result;
 			} else {
 				result = std::shared_ptr<AzureContextState>(storage_account_it->second, azure_context_state);
 			}
 		}
 	} else {
-		result = std::make_shared<AzureContextState>(
-		    ConnectToStorageAccount(opener, path, parsed_url.storage_account_name, parsed_url.endpoint));
+		result = CreateStorageContext(opener, path, parsed_url);
 	}
 
 	return result;
+}
+
+std::shared_ptr<AzureContextState> AzureStorageFileSystem::CreateStorageContext(FileOpener *opener, const string &path,
+                                                                                const AzureParsedUrl &parsed_url) {
+	auto azure_read_options = ParseAzureReadOptions(opener);
+
+	return std::make_shared<AzureContextState>(
+	    ConnectToStorageAccount(opener, path, parsed_url.storage_account_name, parsed_url.endpoint),
+	    azure_read_options);
 }
 
 } // namespace duckdb

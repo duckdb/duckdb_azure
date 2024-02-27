@@ -9,21 +9,25 @@
 namespace duckdb {
 class HTTPState;
 
-class AzureContextState : public ClientContextState {
-	Azure::Storage::Blobs::BlobServiceClient service_client;
-	bool is_valid;
-
-public:
-	AzureContextState(Azure::Storage::Blobs::BlobServiceClient client);
-	Azure::Storage::Blobs::BlobContainerClient GetBlobContainerClient(const std::string &blobContainerName) const;
-	bool IsValid() const;
-	void QueryEnd() override;
-};
-
 struct AzureReadOptions {
 	int32_t transfer_concurrency = 5;
 	int64_t transfer_chunk_size = 1 * 1024 * 1024;
 	idx_t buffer_size = 1 * 1024 * 1024;
+};
+
+class AzureContextState : public ClientContextState {
+public:
+	const AzureReadOptions read_options;
+
+private:
+	Azure::Storage::Blobs::BlobServiceClient service_client;
+	bool is_valid;
+
+public:
+	AzureContextState(Azure::Storage::Blobs::BlobServiceClient client, const AzureReadOptions &azure_read_options);
+	Azure::Storage::Blobs::BlobContainerClient GetBlobContainerClient(const std::string &blobContainerName) const;
+	bool IsValid() const;
+	void QueryEnd() override;
 };
 
 struct AzureParsedUrl {
@@ -61,13 +65,11 @@ public:
 	// Azure Blob Client
 	Azure::Storage::Blobs::BlobClient blob_client;
 
-	AzureReadOptions read_options;
+	const AzureReadOptions read_options;
 };
 
 class AzureStorageFileSystem : public FileSystem {
 public:
-	~AzureStorageFileSystem();
-
 	duckdb::unique_ptr<FileHandle> OpenFile(const string &path, uint8_t flags, FileLockType lock = DEFAULT_LOCK,
 	                                        FileCompressionType compression = DEFAULT_COMPRESSION,
 	                                        FileOpener *opener = nullptr) final;
@@ -98,16 +100,12 @@ public:
 
 	static void Verify();
 
-public:
-	// guarded global variables are used here to share the http_state when parsing multiple files
-	static mutex azure_log_lock;
-	static weak_ptr<HTTPState> http_state;
-	static bool listener_set;
-
 protected:
 	static AzureParsedUrl ParseUrl(const string &url);
-	static std::shared_ptr<AzureContextState> GetOrCreateStorageAccountContext(FileOpener *opener, const string &path,
-	                                                                           const AzureParsedUrl &parsed_url);
+	static std::shared_ptr<AzureContextState> GetOrCreateStorageContext(FileOpener *opener, const string &path,
+	                                                                    const AzureParsedUrl &parsed_url);
+	static std::shared_ptr<AzureContextState> CreateStorageContext(FileOpener *opener, const string &path,
+	                                                               const AzureParsedUrl &parsed_url);
 	static void ReadRange(FileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len);
 	virtual duckdb::unique_ptr<AzureStorageFileHandle> CreateHandle(const string &path, uint8_t flags,
 	                                                                FileLockType lock, FileCompressionType compression,
