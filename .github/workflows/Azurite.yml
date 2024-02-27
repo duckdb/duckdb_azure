@@ -189,4 +189,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          cat azurite_log.tx
+          cat azurite_log.txt
