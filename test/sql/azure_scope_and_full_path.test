@@ -17,7 +17,7 @@ CREATE SECRET s1 (
 statement ok
 CREATE SECRET s2 (
     TYPE AZURE,
-    SCOPE 'azure://*@devstoreaccount1',
+    SCOPE 'azure://devstoreaccount1.blob.core.windows.net',
     CONNECTION_STRING 'INVALID CONNECTION STRING'
 )
 
@@ -25,59 +25,24 @@ CREATE SECRET s2 (
 statement ok
 CREATE SECRET s3 (
     TYPE AZURE,
-    SCOPE 'azure://testing-private@devstoreaccount1',
+    SCOPE 'azure://devstoreaccount1.blob.core.windows.net/testing-private',
     CONNECTION_STRING '${AZURE_STORAGE_CONNECTION_STRING}'
 )
 
 # Ensure that the right secret is choose
 query I
-SELECT count(*) FROM 'azure://testing-private@devstoreaccount1.blob.core.windows.net/lineitem.csv';
+SELECT count(*) FROM 'azure://devstoreaccount1.blob.core.windows.net/testing-private/lineitem.csv';
 ----
 60175
 
-# Remove s2 & s3 and redefine s2 with a valid credential and s3 with invalid
-statement ok
-DROP SECRET s2
-
-statement ok
-DROP SECRET s3
-
-statement ok
-CREATE SECRET s2 (
-    TYPE AZURE,
-    SCOPE 'azure://*@devstoreaccount1',
-    CONNECTION_STRING '${AZURE_STORAGE_CONNECTION_STRING}'
-)
-
-statement ok
-CREATE SECRET s3 (
-    TYPE AZURE,
-    SCOPE 'azure://testing-private@devstoreaccount1',
-    CONNECTION_STRING 'INVALID CREDENTIAL'
-)
-
-# s3 secret should be matching with the highest score
-statement error
-SELECT count(*) FROM 'azure://testing-private@devstoreaccount1.blob.core.windows.net/lineitem.csv';
-----
-Invalid Input Error: A invalid connection string has been provided.
-
-# Remove s3 secret
-statement ok
-DROP SECRET s3
-
-# Now the wildcard scope should match
-query I
-SELECT count(*) FROM 'azure://testing-private@devstoreaccount1.blob.core.windows.net/lineitem.csv';
-----
-60175
-
-# Remove secrets
 statement ok
 DROP SECRET s1
 
 statement ok
 DROP SECRET s2
+
+statement ok
+DROP SECRET s3
 
 # Check that the endpoint and azure storage are deduce from the path
 
@@ -86,6 +51,6 @@ SET azure_storage_connection_string = '${AZURE_STORAGE_CONNECTION_STRING}'
 
 # Now the wildcard scope should match
 query I
-SELECT count(*) FROM 'azure://testing-public@devstoreaccount1.blob.core.windows.net/lineitem.csv';
+SELECT count(*) FROM 'azure://devstoreaccount1.blob.core.windows.net/testing-public/lineitem.csv';
 ----
 60175

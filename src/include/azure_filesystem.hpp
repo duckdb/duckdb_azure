@@ -2,6 +2,7 @@
 
 #include "duckdb.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "azure_parsed_url.hpp"
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_service_client.hpp>
 #include <string>
@@ -28,14 +29,6 @@ public:
 	Azure::Storage::Blobs::BlobContainerClient GetBlobContainerClient(const std::string &blobContainerName) const;
 	bool IsValid() const;
 	void QueryEnd() override;
-};
-
-struct AzureParsedUrl {
-	const string container;
-	const string storage_account_name;
-	const string endpoint;
-	const string prefix;
-	const string path;
 };
 
 class AzureStorageFileHandle : public FileHandle {
