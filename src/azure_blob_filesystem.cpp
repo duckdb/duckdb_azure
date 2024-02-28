@@ -1,4 +1,4 @@
-#include "azure_filesystem.hpp"
+#include "azure_blob_filesystem.hpp"
 
 #include "azure_storage_account_client.hpp"
 #include "duckdb.hpp"
@@ -68,29 +68,29 @@ static bool Match(vector<string>::const_iterator key, vector<string>::const_iter
 	return key == key_end && pattern == pattern_end;
 }
 
-//////// AzureContextState ////////
-AzureContextState::AzureContextState(Azure::Storage::Blobs::BlobServiceClient client,
-                                     const AzureReadOptions &azure_read_options)
+//////// AzureBlobContextState ////////
+AzureBlobContextState::AzureBlobContextState(Azure::Storage::Blobs::BlobServiceClient client,
+                                             const AzureReadOptions &azure_read_options)
     : read_options(azure_read_options), service_client(std::move(client)), is_valid(true) {
 }
 
 Azure::Storage::Blobs::BlobContainerClient
-AzureContextState::GetBlobContainerClient(const std::string &blobContainerName) const {
+AzureBlobContextState::GetBlobContainerClient(const std::string &blobContainerName) const {
 	return service_client.GetBlobContainerClient(blobContainerName);
 }
 
-bool AzureContextState::IsValid() const {
+bool AzureBlobContextState::IsValid() const {
 	return is_valid;
 }
 
-void AzureContextState::QueryEnd() {
+void AzureBlobContextState::QueryEnd() {
 	is_valid = false;
 }
 
-//////// AzureStorageFileHandle ////////
-AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, uint8_t flags,
-                                               Azure::Storage::Blobs::BlobClient blob_client,
-                                               const AzureReadOptions &read_options)
+//////// AzureBlobStorageFileHandle ////////
+AzureBlobStorageFileHandle::AzureBlobStorageFileHandle(FileSystem &fs, string path_p, uint8_t flags,
+                                                       Azure::Storage::Blobs::BlobClient blob_client,
+                                                       const AzureReadOptions &read_options)
     : FileHandle(fs, std::move(path_p)), flags(flags), length(0), last_modified(time_t()), buffer_available(0),
       buffer_idx(0), file_offset(0), buffer_start(0), buffer_end(0), blob_client(std::move(blob_client)),
       read_options(read_options) {
@@ -98,12 +98,13 @@ AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, ui
 		auto res = blob_client.GetProperties();
 		length = res.Value.BlobSize;
 	} catch (Azure::Storage::StorageException &e) {
-		throw IOException("AzureStorageFileSystem open file '" + path + "' failed with code'" + e.ErrorCode +
+		throw IOException("AzureBlobStorageFileSystem open file '" + path + "' failed with code'" + e.ErrorCode +
 		                  "',Reason Phrase: '" + e.ReasonPhrase + "', Message: '" + e.Message + "'");
 	} catch (std::exception &e) {
-		throw IOException("AzureStorageFileSystem could not open file: '%s', unknown error occurred, this could mean "
-		                  "the credentials used were wrong. Original error message: '%s' ",
-		                  path, e.what());
+		throw IOException(
+		    "AzureBlobStorageFileSystem could not open file: '%s', unknown error occurred, this could mean "
+		    "the credentials used were wrong. Original error message: '%s' ",
+		    path, e.what());
 	}
 
 	if (flags & FileFlags::FILE_FLAGS_READ) {
@@ -111,11 +112,11 @@ AzureStorageFileHandle::AzureStorageFileHandle(FileSystem &fs, string path_p, ui
 	}
 }
 
-//////// AzureStorageFileSystem ////////
-unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const string &path, uint8_t flags,
-                                                                        FileLockType lock,
-                                                                        FileCompressionType compression,
-                                                                        FileOpener *opener) {
+//////// AzureBlobStorageFileSystem ////////
+unique_ptr<AzureBlobStorageFileHandle> AzureBlobStorageFileSystem::CreateHandle(const string &path, uint8_t flags,
+                                                                                FileLockType lock,
+                                                                                FileCompressionType compression,
+                                                                                FileOpener *opener) {
 	if (opener == nullptr) {
 		throw InternalException("Cannot do Azure storage CreateHandle without FileOpener");
 	}
@@ -127,11 +128,11 @@ unique_ptr<AzureStorageFileHandle> AzureStorageFileSystem::CreateHandle(const st
 	auto container = storage_context->GetBlobContainerClient(parsed_url.container);
 	auto blob_client = container.GetBlockBlobClient(parsed_url.path);
 
-	return make_uniq<AzureStorageFileHandle>(*this, path, flags, blob_client, storage_context->read_options);
+	return make_uniq<AzureBlobStorageFileHandle>(*this, path, flags, blob_client, storage_context->read_options);
 }
 
-unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, uint8_t flags, FileLockType lock,
-                                                        FileCompressionType compression, FileOpener *opener) {
+unique_ptr<FileHandle> AzureBlobStorageFileSystem::OpenFile(const string &path, uint8_t flags, FileLockType lock,
+                                                            FileCompressionType compression, FileOpener *opener) {
 	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
 
 	if (flags & FileFlags::FILE_FLAGS_WRITE) {
@@ -142,43 +143,43 @@ unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, uint
 	return std::move(handle);
 }
 
-int64_t AzureStorageFileSystem::GetFileSize(FileHandle &handle) {
-	auto &afh = handle.Cast<AzureStorageFileHandle>();
+int64_t AzureBlobStorageFileSystem::GetFileSize(FileHandle &handle) {
+	auto &afh = handle.Cast<AzureBlobStorageFileHandle>();
 	return afh.length;
 }
 
-time_t AzureStorageFileSystem::GetLastModifiedTime(FileHandle &handle) {
-	auto &afh = handle.Cast<AzureStorageFileHandle>();
+time_t AzureBlobStorageFileSystem::GetLastModifiedTime(FileHandle &handle) {
+	auto &afh = handle.Cast<AzureBlobStorageFileHandle>();
 	return afh.last_modified;
 }
 
-bool AzureStorageFileSystem::CanHandleFile(const string &fpath) {
+bool AzureBlobStorageFileSystem::CanHandleFile(const string &fpath) {
 	return fpath.rfind("azure://", 0) * fpath.rfind("az://", 0) == 0;
 }
 
-void AzureStorageFileSystem::Seek(FileHandle &handle, idx_t location) {
-	auto &sfh = handle.Cast<AzureStorageFileHandle>();
+void AzureBlobStorageFileSystem::Seek(FileHandle &handle, idx_t location) {
+	auto &sfh = handle.Cast<AzureBlobStorageFileHandle>();
 	sfh.file_offset = location;
 }
 
-void AzureStorageFileSystem::FileSync(FileHandle &handle) {
+void AzureBlobStorageFileSystem::FileSync(FileHandle &handle) {
 	throw NotImplementedException("FileSync for Azure Storage files not implemented");
 }
 
-int64_t AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes) {
-	auto &hfh = handle.Cast<AzureStorageFileHandle>();
+int64_t AzureBlobStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes) {
+	auto &hfh = handle.Cast<AzureBlobStorageFileHandle>();
 	idx_t max_read = hfh.length - hfh.file_offset;
 	nr_bytes = MinValue<idx_t>(max_read, nr_bytes);
 	Read(handle, buffer, nr_bytes, hfh.file_offset);
 	return nr_bytes;
 }
 
-vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *opener) {
+vector<string> AzureBlobStorageFileSystem::Glob(const string &path, FileOpener *opener) {
 	if (opener == nullptr) {
 		throw InternalException("Cannot do Azure storage Glob without FileOpener");
 	}
 
-	auto azure_url = AzureStorageFileSystem::ParseUrl(path);
+	auto azure_url = AzureBlobStorageFileSystem::ParseUrl(path);
 	auto storage_context = GetOrCreateStorageContext(opener, path, azure_url);
 
 	// Azure matches on prefix, not glob pattern, so we take a substring until the first wildcard
@@ -232,8 +233,8 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 }
 
 // TODO: this code is identical to HTTPFS, look into unifying it
-void AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) {
-	auto &hfh = handle.Cast<AzureStorageFileHandle>();
+void AzureBlobStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) {
+	auto &hfh = handle.Cast<AzureBlobStorageFileHandle>();
 
 	idx_t to_read = nr_bytes;
 	idx_t buffer_offset = 0;
@@ -292,10 +293,10 @@ void AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_b
 	}
 }
 
-bool AzureStorageFileSystem::FileExists(const string &filename) {
+bool AzureBlobStorageFileSystem::FileExists(const string &filename) {
 	try {
 		auto handle = OpenFile(filename, FileFlags::FILE_FLAGS_READ);
-		auto &sfh = handle->Cast<AzureStorageFileHandle>();
+		auto &sfh = handle->Cast<AzureBlobStorageFileHandle>();
 		if (sfh.length == 0) {
 			return false;
 		}
@@ -305,8 +306,9 @@ bool AzureStorageFileSystem::FileExists(const string &filename) {
 	};
 }
 
-void AzureStorageFileSystem::ReadRange(FileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len) {
-	auto &afh = handle.Cast<AzureStorageFileHandle>();
+void AzureBlobStorageFileSystem::ReadRange(FileHandle &handle, idx_t file_offset, char *buffer_out,
+                                           idx_t buffer_out_len) {
+	auto &afh = handle.Cast<AzureBlobStorageFileHandle>();
 
 	try {
 		// Specify the range
@@ -321,13 +323,15 @@ void AzureStorageFileSystem::ReadRange(FileHandle &handle, idx_t file_offset, ch
 		auto res = afh.blob_client.DownloadTo((uint8_t *)buffer_out, buffer_out_len, options);
 
 	} catch (Azure::Storage::StorageException &e) {
-		throw IOException("AzureStorageFileSystem Read to " + afh.path + " failed with " + e.ErrorCode +
+		throw IOException("AzureBlobStorageFileSystem Read to " + afh.path + " failed with " + e.ErrorCode +
 		                  "Reason Phrase: " + e.ReasonPhrase);
 	}
 }
 
-AzureParsedUrl AzureStorageFileSystem::ParseUrl(const string &url) {
-	constexpr auto invalid_url_format = "The URL %s does not match the expected formats: (azure|az)://<container>/[<path>] or the fully qualified one: (azure|az)://<storage account>.<endpoint>/<container>/[<path>]";
+AzureParsedUrl AzureBlobStorageFileSystem::ParseUrl(const string &url) {
+	constexpr auto invalid_url_format =
+	    "The URL %s does not match the expected formats: (azure|az)://<container>/[<path>] or the fully qualified one: "
+	    "(azure|az)://<storage account>.<endpoint>/<container>/[<path>]";
 	string container, storage_account_name, endpoint, prefix, path;
 
 	if (url.rfind("azure://", 0) * url.rfind("az://", 0) != 0) {
@@ -373,16 +377,16 @@ AzureParsedUrl AzureStorageFileSystem::ParseUrl(const string &url) {
 	return {container, storage_account_name, endpoint, prefix, path};
 }
 
-std::shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(FileOpener *opener,
-                                                                                     const std::string &path,
-                                                                                     const AzureParsedUrl &parsed_url) {
+std::shared_ptr<AzureBlobContextState>
+AzureBlobStorageFileSystem::GetOrCreateStorageContext(FileOpener *opener, const std::string &path,
+                                                      const AzureParsedUrl &parsed_url) {
 	Value value;
 	bool azure_context_caching = true;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_context_caching", value)) {
 		azure_context_caching = value.GetValue<bool>();
 	}
 
-	std::shared_ptr<AzureContextState> result;
+	std::shared_ptr<AzureBlobContextState> result;
 	if (azure_context_caching) {
 		auto *client_context = FileOpener::TryGetClientContext(opener);
 
@@ -392,15 +396,15 @@ std::shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageCon
 			result = CreateStorageContext(opener, path, parsed_url);
 			registered_state.insert(std::make_pair(parsed_url.storage_account_name, result));
 		} else {
-			auto *azure_context_state = static_cast<AzureContextState *>(storage_account_it->second.get());
-			// We keep the context valid until the QueryEnd (cf: AzureContextState#QueryEnd())
+			auto *azure_context_state = static_cast<AzureBlobContextState *>(storage_account_it->second.get());
+			// We keep the context valid until the QueryEnd (cf: AzureBlobContextState#QueryEnd())
 			// we do so because between queries the user can change the secret/variable that has been set
 			// the side effect of that is that we will reconnect (potentially retrieve a new token) on each request
 			if (!azure_context_state->IsValid()) {
 				result = CreateStorageContext(opener, path, parsed_url);
 				registered_state[parsed_url.storage_account_name] = result;
 			} else {
-				result = std::shared_ptr<AzureContextState>(storage_account_it->second, azure_context_state);
+				result = std::shared_ptr<AzureBlobContextState>(storage_account_it->second, azure_context_state);
 			}
 		}
 	} else {
@@ -410,11 +414,13 @@ std::shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageCon
 	return result;
 }
 
-std::shared_ptr<AzureContextState> AzureStorageFileSystem::CreateStorageContext(FileOpener *opener, const string &path,
-                                                                                const AzureParsedUrl &parsed_url) {
+std::shared_ptr<AzureBlobContextState>
+AzureBlobStorageFileSystem::CreateStorageContext(FileOpener *opener, const string &path,
+                                                 const AzureParsedUrl &parsed_url) {
 	auto azure_read_options = ParseAzureReadOptions(opener);
 
-	return std::make_shared<AzureContextState>(ConnectToStorageAccount(opener, path, parsed_url), azure_read_options);
+	return std::make_shared<AzureBlobContextState>(ConnectToStorageAccount(opener, path, parsed_url),
+	                                               azure_read_options);
 }
 
 } // namespace duckdb

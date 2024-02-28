@@ -1,7 +1,7 @@
 #define DUCKDB_EXTENSION_MAIN
 
 #include "azure_extension.hpp"
-#include "azure_filesystem.hpp"
+#include "azure_blob_filesystem.hpp"
 #include "azure_secret.hpp"
 
 namespace duckdb {
@@ -9,7 +9,7 @@ namespace duckdb {
 static void LoadInternal(DatabaseInstance &instance) {
 	// Load filesystem
 	auto &fs = instance.GetFileSystem();
-	fs.RegisterSubSystem(make_uniq<AzureStorageFileSystem>());
+	fs.RegisterSubSystem(make_uniq<AzureBlobStorageFileSystem>());
 
 	// Load Secret functions
 	CreateAzureSecretFunctions::Register(instance);
