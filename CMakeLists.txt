@@ -21,23 +21,30 @@ build_loadable_extension(${TARGET_NAME} ${PARAMETERS} ${EXTENSION_SOURCES})
 
 find_package(azure-identity-cpp CONFIG)
 find_package(azure-storage-blobs-cpp CONFIG)
+find_package(azure-storage-files-datalake-cpp CONFIG)
 
-if(NOT ${azure-identity-cpp_FOUND} OR NOT ${azure-storage-blobs-cpp_FOUND})
+if(NOT ${azure-identity-cpp_FOUND}
+   OR NOT ${azure-storage-blobs-cpp_FOUND}
+   OR NOT ${azure-storage-files-datalake-cpp_FOUND})
   message(FATAL_ERROR "Azure SDK not found, did you set up vcpkg correctly?")
 endif()
 
 # Static lib
-target_link_libraries(${EXTENSION_NAME} Azure::azure-identity
-                      Azure::azure-storage-blobs)
-target_include_directories(${EXTENSION_NAME} PRIVATE Azure::azure-identity
-                                                     Azure::azure-storage-blobs)
+target_link_libraries(
+  ${EXTENSION_NAME} Azure::azure-identity Azure::azure-storage-blobs
+  Azure::azure-storage-files-datalake)
+target_include_directories(
+  ${EXTENSION_NAME} PRIVATE Azure::azure-identity Azure::azure-storage-blobs
+                            Azure::azure-storage-files-datalake)
 
 # Loadable binary
-target_link_libraries(${TARGET_NAME}_loadable_extension Azure::azure-identity
-                      Azure::azure-storage-blobs)
+target_link_libraries(
+  ${TARGET_NAME}_loadable_extension Azure::azure-identity
+  Azure::azure-storage-blobs Azure::azure-storage-files-datalake)
 target_include_directories(
-  ${TARGET_NAME}_loadable_extension PRIVATE Azure::azure-identity
-                                            Azure::azure-storage-blobs)
+  ${TARGET_NAME}_loadable_extension
+  PRIVATE Azure::azure-identity Azure::azure-storage-blobs
+          Azure::azure-storage-files-datalake)
 
 install(
   TARGETS ${EXTENSION_NAME}

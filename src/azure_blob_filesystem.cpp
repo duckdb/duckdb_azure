@@ -419,7 +419,7 @@ AzureBlobStorageFileSystem::CreateStorageContext(FileOpener *opener, const strin
                                                  const AzureParsedUrl &parsed_url) {
 	auto azure_read_options = ParseAzureReadOptions(opener);
 
-	return std::make_shared<AzureBlobContextState>(ConnectToStorageAccount(opener, path, parsed_url),
+	return std::make_shared<AzureBlobContextState>(ConnectToBlobStorageAccount(opener, path, parsed_url),
 	                                               azure_read_options);
 }
 
