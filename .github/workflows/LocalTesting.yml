@@ -53,7 +53,6 @@ jobs:
     - name: Build extension
       env:
         GEN: ninja
-#        STATIC_LIBCPP: 1 TODO WHY?
       run: |
         make release
 
