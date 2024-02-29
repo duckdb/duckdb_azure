@@ -195,14 +195,15 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 
 	Azure::Storage::Blobs::ListBlobsOptions options;
 	options.Prefix = shared_path;
+
+	const auto path_result_prefix = (azure_url.storage_account_name.empty() ? (azure_url.prefix + azure_url.container) : (azure_url.prefix + azure_url.storage_account_name +'.'+azure_url.endpoint+ '/' + azure_url.container));
 	while (true) {
 		// Perform query
 		Azure::Storage::Blobs::ListBlobsPagedResponse res;
 		try {
 			res = container_client.ListBlobs(options);
 		} catch (Azure::Storage::StorageException &e) {
-			throw IOException("AzureStorageFileSystem Read to " + path + " failed with " + e.ErrorCode +
-			                  "Reason Phrase: " + e.ReasonPhrase);
+			throw IOException("AzureStorageFileSystem Read to %s failed with %s Reason Phrase: %s", path, e.ErrorCode, e.ReasonPhrase);
 		}
 
 		// Assuming that in the majority of the case it's wildcard
@@ -214,7 +215,7 @@ vector<string> AzureStorageFileSystem::Glob(const string &path, FileOpener *open
 			bool is_match = Match(key_splits.begin(), key_splits.end(), pattern_splits.begin(), pattern_splits.end());
 
 			if (is_match) {
-				auto result_full_url = azure_url.prefix + azure_url.container + "/" + key.Name;
+				auto result_full_url = path_result_prefix + '/' + key.Name;
 				result.push_back(result_full_url);
 			}
 		}

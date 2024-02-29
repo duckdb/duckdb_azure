@@ -35,6 +35,13 @@ SELECT count(*) FROM 'azure://devstoreaccount1.blob.core.windows.net/testing-pri
 ----
 60175
 
+
+# Ensure that the right secret is choose using wildcard
+query I
+SELECT count(*) FROM 'azure://devstoreaccount1.blob.core.windows.net/testing-private/li*.csv';
+----
+60175
+
 statement ok
 DROP SECRET s1
 
