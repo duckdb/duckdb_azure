@@ -45,10 +45,6 @@ static std::string TryGetCurrentSetting(FileOpener *opener, const std::string &n
 
 static bool ConnectionStringMatchStorageAccountName(const std::string &connection_string,
                                                     const std::string &provided_storage_account) {
-	if (provided_storage_account.empty()) {
-		return true;
-	}
-
 	auto storage_account_name_pos = connection_string.find("AccountName=");
 	if (storage_account_name_pos == std::string::npos) {
 		throw InvalidInputException("A invalid connection string has been provided.");
@@ -57,29 +53,24 @@ static bool ConnectionStringMatchStorageAccountName(const std::string &connectio
 	                                      provided_storage_account);
 }
 
-static std::string KVSEndpoint(const KeyValueSecret &secret, const std::string &provided_endpoint) {
-	if (provided_endpoint.empty()) {
-		auto endpoint_value = secret.TryGetValue("endpoint");
-		if (endpoint_value.IsNull()) {
-			return DEFAULT_BLOB_ENDPOINT;
-		} else {
-			return endpoint_value.ToString();
-		}
-	}
-	return provided_endpoint;
+static std::string AccountUrl(const std::string &storage_account, const std::string &endpoint) {
+	return "https://" + storage_account + '.' + endpoint;
 }
 
-static std::string KVSStorageAccount(const KeyValueSecret &secret, const std::string &provided_storage_account) {
-	if (provided_storage_account.empty()) {
-		return secret.TryGetValue("account_name", true).ToString();
+static std::string AccountUrl(const KeyValueSecret &secret, const std::string &defaultEndpoint) {
+	std::string endpoint;
+	auto endpoint_value = secret.TryGetValue("endpoint");
+	if (endpoint_value.IsNull()) {
+		endpoint = defaultEndpoint;
+	} else {
+		endpoint = endpoint_value.ToString();
 	}
-	return provided_storage_account;
+
+	return AccountUrl(secret.TryGetValue("account_name", true).ToString(), endpoint);
 }
 
-static std::string AccountUrl(const KeyValueSecret &secret, const std::string &provided_storage_account,
-                              const std::string &provided_endpoint) {
-	return "https://" + KVSStorageAccount(secret, provided_storage_account) + "." +
-	       KVSEndpoint(secret, provided_endpoint); // FIXME manged default endpoint
+static std::string AccountUrl(const AzureParsedUrl &azure_parsed_url) {
+	return AccountUrl(azure_parsed_url.storage_account_name, azure_parsed_url.endpoint);
 }
 
 template <typename T>
@@ -312,17 +303,17 @@ static Azure::Core::Http::Policies::TransportOptions GetTransportOptions(FileOpe
 
 static Azure::Storage::Blobs::BlobServiceClient
 GetBlobStorageAccountClientFromConfigProvider(FileOpener *opener, const KeyValueSecret &secret,
-                                              const std::string &provided_storage_account,
-                                              const std::string &provided_endpoint) {
+                                              const AzureParsedUrl &azure_parsed_url) {
 	auto transport_options = GetTransportOptions(opener, secret);
 
 	// If connection string, we're done heres
 	auto connection_string_val = secret.TryGetValue("connection_string");
 	if (!connection_string_val.IsNull()) {
 		auto connection_string = connection_string_val.ToString();
-		if (!ConnectionStringMatchStorageAccountName(connection_string, provided_storage_account)) {
+		if (azure_parsed_url.is_fully_qualified &&
+		    !ConnectionStringMatchStorageAccountName(connection_string, azure_parsed_url.storage_account_name)) {
 			throw InvalidInputException("The provided connection string does not match the storage account named %s",
-			                            provided_storage_account);
+			                            azure_parsed_url.storage_account_name);
 		}
 
 		auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
@@ -330,24 +321,25 @@ GetBlobStorageAccountClientFromConfigProvider(FileOpener *opener, const KeyValue
 	}
 
 	// Default provider (config) with no connection string => public storage account
-	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
+	auto account_url =
+	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_BLOB_ENDPOINT);
 	auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, blob_options);
 }
 
 static Azure::Storage::Files::DataLake::DataLakeServiceClient
 GetDfsStorageAccountClientFromConfigProvider(FileOpener *opener, const KeyValueSecret &secret,
-                                             const std::string &provided_storage_account,
-                                             const std::string &provided_endpoint) {
+                                             const AzureParsedUrl &azure_parsed_url) {
 	auto transport_options = GetTransportOptions(opener, secret);
 
 	// If connection string, we're done heres
 	auto connection_string_val = secret.TryGetValue("connection_string");
 	if (!connection_string_val.IsNull()) {
 		auto connection_string = connection_string_val.ToString();
-		if (!ConnectionStringMatchStorageAccountName(connection_string, provided_storage_account)) {
+		if (azure_parsed_url.is_fully_qualified &&
+		    !ConnectionStringMatchStorageAccountName(connection_string, azure_parsed_url.storage_account_name)) {
 			throw InvalidInputException("The provided connection string does not match the storage account named %s",
-			                            provided_storage_account);
+			                            azure_parsed_url.storage_account_name);
 		}
 
 		auto dfs_options = ToDfsClientOptions(transport_options, GetHttpState(opener));
@@ -356,97 +348,91 @@ GetDfsStorageAccountClientFromConfigProvider(FileOpener *opener, const KeyValueS
 	}
 
 	// Default provider (config) with no connection string => public storage account
-	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
+	auto account_url =
+	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_DFS_ENDPOINT);
 	auto dfs_options = ToDfsClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Files::DataLake::DataLakeServiceClient(account_url, dfs_options);
 }
 
 static Azure::Storage::Blobs::BlobServiceClient
 GetBlobStorageAccountClientFromCredentialChainProvider(FileOpener *opener, const KeyValueSecret &secret,
-                                                       const std::string &provided_storage_account,
-                                                       const std::string &provided_endpoint) {
+                                                       const AzureParsedUrl &azure_parsed_url) {
 	auto transport_options = GetTransportOptions(opener, secret);
 	// Create credential chain
 	auto credential = CreateChainedTokenCredential(secret, transport_options);
 
 	// Connect to storage account
-	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
+	auto account_url =
+	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_BLOB_ENDPOINT);
 	auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, std::move(credential), blob_options);
 }
 
 static Azure::Storage::Files::DataLake::DataLakeServiceClient
 GetDfsStorageAccountClientFromCredentialChainProvider(FileOpener *opener, const KeyValueSecret &secret,
-                                                      const std::string &provided_storage_account,
-                                                      const std::string &provided_endpoint) {
+                                                      const AzureParsedUrl &azure_parsed_url) {
 	auto transport_options = GetTransportOptions(opener, secret);
 	// Create credential chain
 	auto credential = CreateChainedTokenCredential(secret, transport_options);
 
 	// Connect to storage account
-	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
+	auto account_url =
+	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_DFS_ENDPOINT);
 	auto dfs_options = ToDfsClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Files::DataLake::DataLakeServiceClient(account_url, std::move(credential), dfs_options);
 }
 
 static Azure::Storage::Blobs::BlobServiceClient
 GetBlobStorageAccountClientFromServicePrincipalProvider(FileOpener *opener, const KeyValueSecret &secret,
-                                                        const std::string &provided_storage_account,
-                                                        const std::string &provided_endpoint) {
+                                                        const AzureParsedUrl &azure_parsed_url) {
 	auto transport_options = GetTransportOptions(opener, secret);
 	auto token_credential = CreateClientCredential(secret, transport_options);
 
-	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
+	auto account_url =
+	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_BLOB_ENDPOINT);
+	;
 	auto blob_options = ToBlobClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Blobs::BlobServiceClient(account_url, token_credential, blob_options);
 }
 
 static Azure::Storage::Files::DataLake::DataLakeServiceClient
 GetDfsStorageAccountClientFromServicePrincipalProvider(FileOpener *opener, const KeyValueSecret &secret,
-                                                       const std::string &provided_storage_account,
-                                                       const std::string &provided_endpoint) {
+                                                       const AzureParsedUrl &azure_parsed_url) {
 	auto transport_options = GetTransportOptions(opener, secret);
 	auto token_credential = CreateClientCredential(secret, transport_options);
 
-	auto account_url = AccountUrl(secret, provided_storage_account, provided_endpoint);
+	auto account_url =
+	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_DFS_ENDPOINT);
+	;
 	auto dfs_options = ToDfsClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Files::DataLake::DataLakeServiceClient(account_url, token_credential, dfs_options);
 }
 
-static Azure::Storage::Blobs::BlobServiceClient GetBlobStorageAccountClient(FileOpener *opener,
-                                                                            const KeyValueSecret &secret,
-                                                                            const std::string &provided_storage_account,
-                                                                            const std::string &provided_endpoint) {
+static Azure::Storage::Blobs::BlobServiceClient
+GetBlobStorageAccountClient(FileOpener *opener, const KeyValueSecret &secret, const AzureParsedUrl &azure_parsed_url) {
 	auto &provider = secret.GetProvider();
 	// default provider
 	if (provider == "config") {
-		return GetBlobStorageAccountClientFromConfigProvider(opener, secret, provided_storage_account,
-		                                                     provided_endpoint);
+		return GetBlobStorageAccountClientFromConfigProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "credential_chain") {
-		return GetBlobStorageAccountClientFromCredentialChainProvider(opener, secret, provided_storage_account,
-		                                                              provided_endpoint);
+		return GetBlobStorageAccountClientFromCredentialChainProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "service_principal") {
-		return GetBlobStorageAccountClientFromServicePrincipalProvider(opener, secret, provided_storage_account,
-		                                                               provided_endpoint);
+		return GetBlobStorageAccountClientFromServicePrincipalProvider(opener, secret, azure_parsed_url);
 	}
 
 	throw InvalidInputException("Unsupported provider type %s for azure", provider);
 }
 
 static Azure::Storage::Files::DataLake::DataLakeServiceClient
-GetDfsStorageAccountClient(FileOpener *opener, const KeyValueSecret &secret,
-                           const std::string &provided_storage_account, const std::string &provided_endpoint) {
+GetDfsStorageAccountClient(FileOpener *opener, const KeyValueSecret &secret, const AzureParsedUrl &azure_parsed_url) {
 	auto &provider = secret.GetProvider();
 	// default provider
 	if (provider == "config") {
-		return GetDfsStorageAccountClientFromConfigProvider(opener, secret, provided_storage_account,
-		                                                    provided_endpoint);
+		return GetDfsStorageAccountClientFromConfigProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "credential_chain") {
-		return GetDfsStorageAccountClientFromCredentialChainProvider(opener, secret, provided_storage_account,
-		                                                             provided_endpoint);
+		return GetDfsStorageAccountClientFromCredentialChainProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "service_principal") {
-		return GetDfsStorageAccountClientFromServicePrincipalProvider(opener, secret, provided_storage_account,
-		                                                              provided_endpoint);
+		return GetDfsStorageAccountClientFromServicePrincipalProvider(opener, secret, azure_parsed_url);
 	}
 
 	throw InvalidInputException("Unsupported provider type %s for azure", provider);
@@ -495,7 +481,7 @@ static Azure::Storage::Blobs::BlobServiceClient GetBlobStorageAccountClient(File
 		throw InvalidInputException("No valid Azure credentials found!");
 	}
 
-	auto account_url = "https://" + azure_account_name + "." + endpoint;
+	auto account_url = AccountUrl(azure_account_name, endpoint);
 	// Credential chain secret equivalent
 	auto credential_chain = TryGetCurrentSetting(opener, "azure_credential_chain");
 	if (!credential_chain.empty()) {
@@ -528,8 +514,7 @@ Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(FileOpener 
 
 	const auto *secret = LookupSecret(opener, path);
 	if (secret) {
-		return GetBlobStorageAccountClient(opener, *secret, azure_parsed_url.storage_account_name,
-		                                   azure_parsed_url.endpoint);
+		return GetBlobStorageAccountClient(opener, *secret, azure_parsed_url);
 	}
 
 	// No secret found try to connect with variables
@@ -540,15 +525,14 @@ Azure::Storage::Files::DataLake::DataLakeServiceClient
 ConnectToDfsStorageAccount(FileOpener *opener, const std::string &path, const AzureParsedUrl &azure_parsed_url) {
 	const auto *secret = LookupSecret(opener, path);
 	if (secret) {
-		return GetDfsStorageAccountClient(opener, *secret, azure_parsed_url.storage_account_name,
-		                                  azure_parsed_url.endpoint);
+		return GetDfsStorageAccountClient(opener, *secret, azure_parsed_url);
 	}
 
 	if (!azure_parsed_url.is_fully_qualified) {
-	throw InvalidInputException(
-	    "Cannot identified the storage account from path '%s'. To connect anonymously to a storage account easier a "
-	    "fully qualified path has to be provided or secret must be create.",
-	    path);
+		throw InvalidInputException(
+		    "Cannot identified the storage account from path '%s'. To connect anonymously to a "
+		    "storage account easier a fully qualified path has to be provided or secret must be create.",
+		    path);
 	}
 
 	// No secret but FQDN has been provided, connect to a public storage account

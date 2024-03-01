@@ -207,7 +207,8 @@ vector<string> AzureBlobStorageFileSystem::Glob(const string &path, FileOpener *
 		try {
 			res = container_client.ListBlobs(options);
 		} catch (Azure::Storage::StorageException &e) {
-			throw IOException("AzureStorageFileSystem Read to %s failed with %s Reason Phrase: %s", path, e.ErrorCode, e.ReasonPhrase);
+			throw IOException("AzureStorageFileSystem Read to %s failed with %s Reason Phrase: %s", path, e.ErrorCode,
+			                  e.ReasonPhrase);
 		}
 
 		// Assuming that in the majority of the case it's wildcard
@@ -335,7 +336,7 @@ AzureParsedUrl AzureBlobStorageFileSystem::ParseUrl(const string &url) {
 	constexpr auto invalid_url_format =
 	    "The URL %s does not match the expected formats: (azure|az)://<container>/[<path>] or the fully qualified one: "
 	    "(azure|az)://<storage account>.<endpoint>/<container>/[<path>]";
-		bool is_fully_qualified;
+	bool is_fully_qualified;
 	string container, storage_account_name, endpoint, prefix, path;
 
 	if (url.rfind("azure://", 0) * url.rfind("az://", 0) != 0) {
