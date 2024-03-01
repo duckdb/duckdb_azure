@@ -90,8 +90,6 @@ public:
 		return "AzureBlobStorageFileSystem";
 	}
 
-	static void Verify();
-
 protected:
 	static AzureParsedUrl ParseUrl(const string &url);
 	static std::shared_ptr<AzureBlobContextState> GetOrCreateStorageContext(FileOpener *opener, const string &path,

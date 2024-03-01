@@ -544,18 +544,18 @@ ConnectToDfsStorageAccount(FileOpener *opener, const std::string &path, const Az
 		                                  azure_parsed_url.endpoint);
 	}
 
-	if (!azure_parsed_url.storage_account_name.empty()) {
-		// No secret but FQDN has been provided, connect to a public storage account
-		auto transport_options = GetTransportOptions(opener);
-		auto account_url = "https://" + azure_parsed_url.storage_account_name + '.' + azure_parsed_url.endpoint;
-		auto dfs_options = ToDfsClientOptions(transport_options, GetHttpState(opener));
-		return Azure::Storage::Files::DataLake::DataLakeServiceClient(account_url, dfs_options);
-	}
-
+	if (!azure_parsed_url.is_fully_qualified) {
 	throw InvalidInputException(
 	    "Cannot identified the storage account from path '%s'. To connect anonymously to a storage account easier a "
 	    "fully qualified path has to be provided or secret must be create.",
 	    path);
+	}
+
+	// No secret but FQDN has been provided, connect to a public storage account
+	auto transport_options = GetTransportOptions(opener);
+	auto account_url = "https://" + azure_parsed_url.storage_account_name + '.' + azure_parsed_url.endpoint;
+	auto dfs_options = ToDfsClientOptions(transport_options, GetHttpState(opener));
+	return Azure::Storage::Files::DataLake::DataLakeServiceClient(account_url, dfs_options);
 }
 
 } // namespace duckdb

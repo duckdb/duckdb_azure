@@ -197,7 +197,10 @@ vector<string> AzureBlobStorageFileSystem::Glob(const string &path, FileOpener *
 	Azure::Storage::Blobs::ListBlobsOptions options;
 	options.Prefix = shared_path;
 
-	const auto path_result_prefix = (azure_url.storage_account_name.empty() ? (azure_url.prefix + azure_url.container) : (azure_url.prefix + azure_url.storage_account_name +'.'+azure_url.endpoint+ '/' + azure_url.container));
+	const auto path_result_prefix =
+	    (azure_url.is_fully_qualified ? (azure_url.prefix + azure_url.storage_account_name + '.' + azure_url.endpoint +
+	                                     '/' + azure_url.container)
+	                                  : (azure_url.prefix + azure_url.container));
 	while (true) {
 		// Perform query
 		Azure::Storage::Blobs::ListBlobsPagedResponse res;
@@ -332,6 +335,7 @@ AzureParsedUrl AzureBlobStorageFileSystem::ParseUrl(const string &url) {
 	constexpr auto invalid_url_format =
 	    "The URL %s does not match the expected formats: (azure|az)://<container>/[<path>] or the fully qualified one: "
 	    "(azure|az)://<storage account>.<endpoint>/<container>/[<path>]";
+		bool is_fully_qualified;
 	string container, storage_account_name, endpoint, prefix, path;
 
 	if (url.rfind("azure://", 0) * url.rfind("az://", 0) != 0) {
@@ -358,6 +362,8 @@ AzureParsedUrl AzureBlobStorageFileSystem::ParseUrl(const string &url) {
 		if (path_slash_pos == string::npos) {
 			throw IOException(invalid_url_format, url);
 		}
+
+		is_fully_qualified = true;
 		storage_account_name = url.substr(prefix_end_pos, dot_pos - prefix_end_pos);
 		endpoint = url.substr(dot_pos + 1, container_slash_pos - dot_pos - 1);
 		container = url.substr(container_slash_pos + 1, path_slash_pos - container_slash_pos - 1);
@@ -370,11 +376,12 @@ AzureParsedUrl AzureBlobStorageFileSystem::ParseUrl(const string &url) {
 			throw IOException(invalid_url_format, url);
 		}
 
+		is_fully_qualified = false;
 		path = url.substr(slash_pos + 1);
 	}
 	prefix = url.substr(0, prefix_end_pos);
 
-	return {container, storage_account_name, endpoint, prefix, path};
+	return {is_fully_qualified, prefix, storage_account_name, endpoint, container, path};
 }
 
 std::shared_ptr<AzureBlobContextState>
