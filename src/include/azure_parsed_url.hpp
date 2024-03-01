@@ -11,4 +11,7 @@ struct AzureParsedUrl {
 	const std::string container;
 	const std::string path;
 };
+
+AzureParsedUrl ParseUrl(const std::string &url);
+
 } // namespace duckdb

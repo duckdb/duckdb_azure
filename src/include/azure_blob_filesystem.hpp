@@ -91,7 +91,6 @@ public:
 	}
 
 protected:
-	static AzureParsedUrl ParseUrl(const string &url);
 	static std::shared_ptr<AzureBlobContextState> GetOrCreateStorageContext(FileOpener *opener, const string &path,
 	                                                                        const AzureParsedUrl &parsed_url);
 	static std::shared_ptr<AzureBlobContextState> CreateStorageContext(FileOpener *opener, const string &path,
