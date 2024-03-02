@@ -1,4 +1,5 @@
 #include "azure_parsed_url.hpp"
+#include "azure_dfs_filesystem.hpp"
 #include "duckdb/common/exception.hpp"
 
 namespace duckdb {
@@ -10,8 +11,9 @@ AzureParsedUrl ParseUrl(const std::string &url) {
 	bool is_fully_qualified;
 	std::string container, storage_account_name, endpoint, prefix, path;
 
-	if (url.rfind("azure://", 0) * url.rfind("az://", 0) != 0) {
-		throw IOException("URL needs to start with azure:// or az://");
+	if (url.rfind("azure://", 0) != 0 && url.rfind("az://", 0) != 0 &&
+	    url.rfind(AzureDfsStorageFileSystem::PATH_PREFIX, 0) != 0) {
+		throw IOException("URL needs to start with azure:// or az:// or %s", AzureDfsStorageFileSystem::PATH_PREFIX);
 	}
 	const auto prefix_end_pos = url.find("//") + 2;
 

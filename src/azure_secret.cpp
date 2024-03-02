@@ -1,4 +1,5 @@
 #include "azure_secret.hpp"
+#include "azure_dfs_filesystem.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/unique_ptr.hpp"
 #include "duckdb/main/extension_util.hpp"
@@ -34,6 +35,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context
 	if (scope.empty()) {
 		scope.push_back("azure://");
 		scope.push_back("az://");
+		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
@@ -58,6 +60,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 	if (scope.empty()) {
 		scope.push_back("azure://");
 		scope.push_back("az://");
+		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
@@ -81,6 +84,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContex
 	if (scope.empty()) {
 		scope.push_back("azure://");
 		scope.push_back("az://");
+		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);

@@ -11,9 +11,13 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 set(EXTENSION_SOURCES
-    src/azure_extension.cpp src/azure_secret.cpp
-    src/azure_storage_account_client.cpp src/azure_blob_filesystem.cpp
-    src/http_state_policy.cpp src/azure_parsed_url.cpp)
+    src/azure_extension.cpp
+    src/azure_secret.cpp
+    src/azure_storage_account_client.cpp
+    src/azure_blob_filesystem.cpp
+    src/azure_dfs_filesystem.cpp
+    src/http_state_policy.cpp
+    src/azure_parsed_url.cpp)
 add_library(${EXTENSION_NAME} STATIC ${EXTENSION_SOURCES})
 
 set(PARAMETERS "-warnings")

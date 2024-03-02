@@ -1,0 +1,30 @@
+# name: test/sql/hierarchical_namespace.test
+# description: test azure extension with ADLS GEN2 storage
+# group: [azure]
+
+# Require statement will ensure this test is run with this extension loaded
+require azure
+
+require-env AZURE_STORAGE_CONNECTION_STRING
+
+statement ok
+CREATE SECRET s1 (
+    TYPE AZURE,
+    CONNECTION_STRING '${AZURE_STORAGE_CONNECTION_STRING}'
+);
+
+query I
+SELECT count(*) FROM 'abfss://hn1/key1=m*/*.csv';
+----
+4
+
+query I
+SELECT count(*) FROM 'abfss://hn1/key1=*/*.csv';
+----
+9
+
+query I
+SELECT count(*) FROM 'abfss://hn1/data.csv';
+----
+3
+
