@@ -15,7 +15,7 @@ constexpr auto COMMON_OPTIONS = {
     // Proxy option
     "http_proxy", "proxy_user_name", "proxy_password",
     // Storage account option
-    "account_name"};
+    "account_name", "endpoint"};
 
 static void CopySecret(const std::string &key, const CreateSecretInput &input, KeyValueSecret &result) {
 	auto val = input.options.find(key);
@@ -69,7 +69,6 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 
 	// Manage specific secret option
 	CopySecret("chain", input, *result);
-	CopySecret("azure_endpoint", input, *result);
 
 	// Redact sensible keys
 	RedactCommonKeys(*result);
@@ -96,7 +95,6 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContex
 	CopySecret("client_id", input, *result);
 	CopySecret("client_secret", input, *result);
 	CopySecret("client_certificate_path", input, *result);
-	CopySecret("azure_endpoint", input, *result);
 
 	// Redact sensible keys
 	RedactCommonKeys(*result);
@@ -109,6 +107,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContex
 static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
 	// Register azure common parameters
 	function.named_parameters["account_name"] = LogicalType::VARCHAR;
+	function.named_parameters["endpoint"] = LogicalType::VARCHAR;
 
 	// Register proxy parameters
 	function.named_parameters["http_proxy"] = LogicalType::VARCHAR;
@@ -135,7 +134,6 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	// Register the credential_chain secret provider
 	CreateSecretFunction cred_chain_function = {type, "credential_chain", CreateAzureSecretFromCredentialChain};
 	cred_chain_function.named_parameters["chain"] = LogicalType::VARCHAR;
-	cred_chain_function.named_parameters["azure_endpoint"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(cred_chain_function);
 	ExtensionUtil::RegisterFunction(instance, cred_chain_function);
 
@@ -145,7 +143,6 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	service_principal_function.named_parameters["client_id"] = LogicalType::VARCHAR;
 	service_principal_function.named_parameters["client_secret"] = LogicalType::VARCHAR;
 	service_principal_function.named_parameters["client_certificate_path"] = LogicalType::VARCHAR;
-	service_principal_function.named_parameters["azure_endpoint"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(service_principal_function);
 	ExtensionUtil::RegisterFunction(instance, service_principal_function);
 }

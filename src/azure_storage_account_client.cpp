@@ -409,56 +409,23 @@ static Azure::Storage::Blobs::BlobServiceClient GetStorageAccountClient(FileOpen
 }
 
 Azure::Storage::Blobs::BlobServiceClient ConnectToStorageAccount(FileOpener *opener, const std::string &path,
-                                                                 const std::string &provided_storage_account,
-                                                                 const std::string &provided_endpoint) {
+                                                                 const AzureParsedUrl &azure_parsed_url) {
 	// Lookup Secret
 	auto context = opener->TryGetClientContext();
 
 	// Firstly, try to use the auth from the secret
 	if (context) {
 		auto transaction = CatalogTransaction::GetSystemCatalogTransaction(*context);
-		if (provided_storage_account.empty()) {
-			auto secret_lookup = context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
-			if (secret_lookup.HasMatch()) {
-				const auto &base_secret = secret_lookup.GetSecret();
-				return GetStorageAccountClient(opener, dynamic_cast<const KeyValueSecret &>(base_secret),
-				                               provided_storage_account, provided_endpoint);
-			}
-		} else {
-			/** Use the storage account name as path first, because internally the secret manager will return the secret
-			 * name that start/match the most with it.
-			 *
-			 * Note that when `provided_storage_account` is specified it mean that the path look like this:
-			 * azure://mycontainer@storageaccountname.blob.azure.com/
-			 *
-			 * So if user specify a SCOPE, he can do like this:
-			 * 1. `azure://` will match all paths.
-			 * 2. `azure://mycontainer` will match all container named `mycontainer` whatever is the storage account
-			 *    name.
-			 * 3. `azure://mycontainer@storageaccountname` will match the container `mycontainer` of the storage account
-			 *    `storageaccountname`.
-			 *
-			 * By adding the `azure://\*@storageaccountname` artificially it allow user to define a scope for a all
-			 * containers of a storage account.
-			 */
-			SecretMatch best_match;
-			for (const auto &p :
-			     {path, "azure://*@" + provided_storage_account, "az://*@" + provided_storage_account}) {
-				auto match = context->db->config.secret_manager->LookupSecret(transaction, p, "azure");
-				if (match.HasMatch() && match.score > best_match.score) {
-					best_match = match;
-				}
-			}
-			if (best_match.HasMatch()) {
-				const auto &base_secret = best_match.GetSecret();
-				return GetStorageAccountClient(opener, dynamic_cast<const KeyValueSecret &>(base_secret),
-				                               provided_storage_account, provided_endpoint);
-			}
+		auto secret_lookup = context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
+		if (secret_lookup.HasMatch()) {
+			const auto &base_secret = secret_lookup.GetSecret();
+			return GetStorageAccountClient(opener, dynamic_cast<const KeyValueSecret &>(base_secret),
+			                               azure_parsed_url.storage_account_name, azure_parsed_url.endpoint);
 		}
 	}
 
 	// No secret found try to connect with variables
-	return GetStorageAccountClient(opener, provided_storage_account, provided_endpoint);
+	return GetStorageAccountClient(opener, azure_parsed_url.storage_account_name, azure_parsed_url.endpoint);
 }
 
 } // namespace duckdb
