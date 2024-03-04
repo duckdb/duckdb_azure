@@ -1,0 +1,60 @@
+# name: test/sql/test_data_integrity.test
+# description: Check the test data looks as expected
+# group: [azure]
+
+require azure
+
+require parquet
+
+require-env DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE
+
+# Note: if this test fails, you probably added a file to `./data` when doing so, they need to be added here too
+
+### Check file listing
+query I
+SELECT file FROM glob("azure://testing-public/**") ORDER BY file
+----
+azure://testing-private/README.md
+azure://testing-public/l.csv
+azure://testing-public/l.parquet
+azure://testing-public/lineitem.csv
+
+query I
+SELECT file FROM glob("azure://testing-private/**") ORDER BY file
+----
+azure://testing-private/README.md
+azure://testing-private/l.csv
+azure://testing-private/l.parquet
+azure://testing-private/lineitem.csv
+
+
+### Check each file individually
+# l.csv
+query I nosort file1
+FROM './data/l.csv'
+
+query I nosort file1
+FROM 'azure://testing-public/l.csv';
+
+query I nosort file1
+FROM 'azure://testing-private/l.csv';
+
+# l.parquet
+query I nosort file2
+FROM './data/l.parquet'
+
+query I nosort file2
+FROM 'azure://testing-public/l.parquet';
+
+query I nosort file2
+FROM 'azure://testing-private/l.parquet';
+
+# lineitem.csv
+query I nosort file3
+FROM './data/lineitem.csv'
+
+query I nosort file3
+FROM 'azure://testing-public/lineitem.csv';
+
+query I nosort file3
+FROM 'azure://testing-private/lineitem.csv';

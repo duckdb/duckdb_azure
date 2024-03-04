@@ -60,6 +60,11 @@ jobs:
       run: |
         make test
 
+    - name: Run test data integrity check
+      run: |
+        ./build/release/duckdb -c "CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
+        DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE=1 ./build/release/test/unittest "*test/sql/test_data_integrity.test"
+
     - name: Azure test server log
       if: always()
       shell: bash
@@ -129,6 +134,11 @@ jobs:
         run: |
           make test
 
+      - name: Run test data integrity check
+        run: |
+          ./build/release/duckdb -c "CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
+          DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE=1 ./build/release/test/unittest "*test/sql/test_data_integrity.test"
+
       - name: Azure test server log
         if: always()
         shell: bash
@@ -183,6 +193,13 @@ jobs:
         shell: bash
         run: |
           build/release/test/Release/unittest.exe --test-dir . "[sql]"
+
+      - name: Run test data integrity check
+        run: |
+          ls build
+          ls build/release
+          ./build/release/Release/duckdb.exe -c "CREATE PERSISTENT SECRET s1 (TYPE AZURE, CONNECTION_STRING '$AZURE_STORAGE_CONNECTION_STRING')"
+          DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE=1 build/release/test/Release/unittest.exe "*test/sql/test_data_integrity.test"
 
       - name: Azure test server log
         if: always()
