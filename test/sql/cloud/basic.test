@@ -1,0 +1,28 @@
+# name: test/sql/cloud/basic.test
+# description: confirm queried data is correct
+# group: [azure]
+
+require azure
+
+require parquet
+
+require-env DUCKDB_AZ_CLI_LOGGED_IN
+
+require-env AZURE_STORAGE_ACCOUNT
+
+statement ok
+set allow_persistent_secrets=false
+
+statement ok
+CREATE SECRET az1 (
+    TYPE AZURE,
+    PROVIDER CREDENTIAL_CHAIN,
+    CHAIN 'cli',
+    ACCOUNT_NAME '${AZURE_STORAGE_ACCOUNT}'
+)
+
+query I nosort r1
+FROM 'azure://testing-private/l.parquet';
+
+query I nosort r1
+FROM './data/l.parquet'

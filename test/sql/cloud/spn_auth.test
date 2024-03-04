@@ -1,0 +1,40 @@
+# name: test/sql/cloud/spn_auth.test
+# description: test azure extension with service principal authentication
+# group: [azure]
+
+require azure
+
+require parquet
+
+require-env AZURE_CLIENT_ID
+
+require-env AZURE_CLIENT_SECRET
+
+require-env AZURE_TENANT_ID
+
+require-env AZURE_STORAGE_ACCOUNT
+
+statement error
+SELECT count(*) FROM 'azure://testing-private/l.parquet';
+----
+Invalid Input Error: No valid Azure credentials found!
+
+statement ok
+CREATE SECRET s1 (
+    TYPE AZURE,
+    PROVIDER SERVICE_PRINCIPAL,
+    TENANT_ID '${AZURE_TENANT_ID}',
+    CLIENT_ID '${AZURE_CLIENT_ID}',
+    CLIENT_SECRET '${AZURE_CLIENT_SECRET}',
+    ACCOUNT_NAME '${AZURE_STORAGE_ACCOUNT}'
+)
+
+query I
+SELECT count(*) FROM 'azure://testing-private/l.parquet';
+----
+60175
+
+query I
+FROM glob('az://testing-private/*.parquet');
+----
+az://testing-private/l.parquet

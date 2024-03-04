@@ -1,0 +1,65 @@
+# name: test/sql/cloud/env_spn_auth.test
+# description: test service principal authentication through env vars
+# group: [azure]
+
+require azure
+
+require parquet
+
+require-env AZURE_CLIENT_ID
+
+require-env AZURE_CLIENT_SECRET
+
+require-env AZURE_TENANT_ID
+
+require-env AZURE_STORAGE_ACCOUNT
+
+statement error
+SELECT count(*) FROM 'azure://testing-private/l.parquet';
+----
+Invalid Input Error: No valid Azure credentials found!
+
+# This should automatically pick up the Service principal specified in the env variables
+statement ok
+CREATE SECRET s1 (
+    TYPE AZURE,
+    PROVIDER CREDENTIAL_CHAIN,
+    CHAIN 'env',
+    ACCOUNT_NAME '${AZURE_STORAGE_ACCOUNT}'
+)
+
+query I
+SELECT count(*) FROM 'azure://testing-private/l.parquet';
+----
+60175
+
+query I
+FROM glob('az://testing-private/*.parquet');
+----
+az://testing-private/l.parquet
+
+statement ok
+DROP SECRET s1;
+
+statement error
+SELECT count(*) FROM 'azure://testing-private/l.parquet';
+----
+Invalid Input Error: No valid Azure credentials found!
+
+# Now again, but with default settings
+statement ok
+CREATE SECRET s1 (
+    TYPE AZURE,
+    PROVIDER CREDENTIAL_CHAIN,
+    ACCOUNT_NAME '${AZURE_STORAGE_ACCOUNT}'
+)
+
+query I
+SELECT count(*) FROM 'azure://testing-private/l.parquet';
+----
+60175
+
+query I
+FROM glob('az://testing-private/*.parquet');
+----
+az://testing-private/l.parquet

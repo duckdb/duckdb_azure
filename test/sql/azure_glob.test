@@ -16,6 +16,7 @@ SET azure_storage_connection_string = '${AZURE_STORAGE_CONNECTION_STRING}';
 query I
 SELECT * from GLOB("azure://testing-private/*.*") order by file;
 ----
+azure://testing-private/README.md
 azure://testing-private/l.csv
 azure://testing-private/l.parquet
 azure://testing-private/lineitem.csv
@@ -40,6 +41,7 @@ azure://testing-private/lineitem.csv
 query I
 SELECT * from GLOB("azure://testing-public/*.*") order by file;
 ----
+azure://testing-public/README.md
 azure://testing-public/l.csv
 azure://testing-public/l.parquet
 azure://testing-public/lineitem.csv
@@ -64,6 +66,7 @@ azure://testing-public/lineitem.csv
 query I
 SELECT * from GLOB("az://testing-private/*.*") order by file;
 ----
+az://testing-private/README.md
 az://testing-private/l.csv
 az://testing-private/l.parquet
 az://testing-private/lineitem.csv
@@ -72,6 +75,7 @@ az://testing-private/lineitem.csv
 query I
 SELECT * from GLOB("az://testing-public/*.*") order by file;
 ----
+az://testing-public/README.md
 az://testing-public/l.csv
 az://testing-public/l.parquet
 az://testing-public/lineitem.csv
