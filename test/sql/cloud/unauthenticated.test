@@ -1,0 +1,29 @@
+# name: test/sql/cloud/unauthenticated.test
+# description: test unauthenticated queries
+# group: [azure]
+
+require azure
+
+require parquet
+
+require-env DUCKDB_AZURE_PUBLIC_CONTAINER_AVAILABLE
+
+require-env AZURE_STORAGE_ACCOUNT
+
+statement ok
+set allow_persistent_secrets=false
+
+# Using fully qualified url
+query I nosort r1
+FROM 'azure://${AZURE_STORAGE_ACCOUNT}.blob.core.windows.net/testing-public/l.parquet';
+
+# Using a secret to set the account name, we can omit the fully qualified url
+statement ok
+CREATE SECRET s1 (TYPE AZURE, ACCOUNT_NAME '${AZURE_STORAGE_ACCOUNT}')
+
+query I nosort r1
+FROM 'azure://testing-public/l.parquet';
+
+query I nosort r1
+FROM './data/l.parquet'
+
