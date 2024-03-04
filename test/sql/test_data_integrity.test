@@ -14,7 +14,7 @@ require-env DUCKDB_AZURE_PERSISTENT_SECRET_AVAILABLE
 query I
 SELECT file FROM glob("azure://testing-public/**") ORDER BY file
 ----
-azure://testing-private/README.md
+azure://testing-public/README.md
 azure://testing-public/l.csv
 azure://testing-public/l.parquet
 azure://testing-public/lineitem.csv
