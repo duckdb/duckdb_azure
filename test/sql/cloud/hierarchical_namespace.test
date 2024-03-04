@@ -5,6 +5,8 @@
 # Require statement will ensure this test is run with this extension loaded
 require azure
 
+require-env AZURE_STORAGE_DFS_STORAGE_NAME
+
 require-env AZURE_STORAGE_DFS_CONNECTION_STRING
 
 statement ok
@@ -32,6 +34,12 @@ query I
 SELECT count(*) FROM 'abfss://hn1/data.csv';
 ----
 3
+
+# Check fully qualified name
+query I
+SELECT count(*) FROM 'abfss://${AZURE_STORAGE_DFS_STORAGE_NAME}.dfs.core.windows.net/hn1/*/*/*.csv';
+----
+6
 
 # Enable http info for the explain analyze statement
 statement ok
