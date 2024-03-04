@@ -5,12 +5,12 @@
 # Require statement will ensure this test is run with this extension loaded
 require azure
 
-require-env AZURE_STORAGE_CONNECTION_STRING
+require-env AZURE_STORAGE_DFS_CONNECTION_STRING
 
 statement ok
 CREATE SECRET s1 (
     TYPE AZURE,
-    CONNECTION_STRING '${AZURE_STORAGE_CONNECTION_STRING}'
+    CONNECTION_STRING '${AZURE_STORAGE_DFS_CONNECTION_STRING}'
 );
 
 query I
@@ -24,7 +24,25 @@ SELECT count(*) FROM 'abfss://hn1/key1=*/*.csv';
 9
 
 query I
+SELECT count(*) FROM 'abfss://hn1/*/*/*.csv';
+----
+6
+
+query I
 SELECT count(*) FROM 'abfss://hn1/data.csv';
 ----
 3
 
+# Enable http info for the explain analyze statement
+statement ok
+SET azure_http_stats = true;
+
+query II
+EXPLAIN ANALYZE SELECT count(*) FROM 'abfss://hn1/key1=*/*.csv';
+----
+analyzed_plan	<REGEX>:.*HTTP Stats\:.*in\: 1\.7 KiB.*\#HEAD\: 2.*GET\: 5.*PUT\: 0.*\#POST\: 0.*
+
+query II
+EXPLAIN ANALYZE SELECT count(*) FROM 'azure://hn1/key1=*/*.csv';
+----
+analyzed_plan	<REGEX>:.*HTTP Stats\:.*in\: 4\.5 KiB.*\#HEAD\: 2.*GET\: 3.*PUT\: 0.*\#POST\: 0.*

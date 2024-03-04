@@ -2,12 +2,16 @@
 #include "azure_storage_account_client.hpp"
 #include "duckdb/function/scalar/string_functions.hpp"
 #include <algorithm>
+#include <azure/storage/blobs/blob_options.hpp>
+#include <azure/storage/common/storage_exception.hpp>
 #include <azure/storage/files/datalake/datalake_file_system_client.hpp>
 #include <azure/storage/files/datalake/datalake_directory_client.hpp>
+#include <azure/storage/files/datalake/datalake_file_client.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
 #include <azure/storage/files/datalake/datalake_responses.hpp>
 #include <cstddef>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace duckdb {
@@ -51,6 +55,44 @@ static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 			break;
 		}
 	}
+}
+
+//////// AzureDfsContextState ////////
+AzureDfsContextState::AzureDfsContextState(Azure::Storage::Files::DataLake::DataLakeServiceClient client,
+                                           const AzureReadOptions &azure_read_options)
+    : AzureContextState(azure_read_options), service_client(std::move(client)) {
+}
+
+Azure::Storage::Files::DataLake::DataLakeFileSystemClient
+AzureDfsContextState::GetDfsFileSystemClient(const std::string &file_system_name) const {
+	return service_client.GetFileSystemClient(file_system_name);
+}
+
+//////// AzureDfsContextState ////////
+AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, string path, uint8_t flags,
+                                                     const AzureReadOptions &read_options,
+                                                     Azure::Storage::Files::DataLake::DataLakeFileClient client)
+    : AzureFileHandle(fs, std::move(path), flags, read_options), file_client(std::move(client)) {
+}
+
+//////// AzureDfsStorageFileSystem ////////
+unique_ptr<AzureFileHandle> AzureDfsStorageFileSystem::CreateHandle(const string &path, uint8_t flags,
+                                                                    FileLockType lock, FileCompressionType compression,
+                                                                    FileOpener *opener) {
+	if (opener == nullptr) {
+		throw InternalException("Cannot do Azure storage CreateHandle without FileOpener");
+	}
+
+	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
+
+	auto parsed_url = ParseUrl(path);
+	auto storage_context = GetOrCreateStorageContext(opener, path, parsed_url);
+	auto file_system_client = storage_context->As<AzureDfsContextState>().GetDfsFileSystemClient(parsed_url.container);
+
+	auto handle = make_uniq<AzureDfsStorageFileHandle>(*this, path, flags, storage_context->read_options,
+	                                                   file_system_client.GetFileClient(parsed_url.path));
+	handle->PostConstruct();
+	return std::move(handle);
 }
 
 bool AzureDfsStorageFileSystem::CanHandleFile(const string &fpath) {
@@ -100,4 +142,58 @@ vector<string> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *o
 
 	return result;
 }
+
+void AzureDfsStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
+	auto &hfh = handle.Cast<AzureDfsStorageFileHandle>();
+	if (hfh.flags & FileFlags::FILE_FLAGS_READ) {
+		try {
+			auto res = hfh.file_client.GetProperties();
+
+			hfh.length = res.Value.FileSize;
+
+			auto last_modified = static_cast<std::chrono::system_clock::time_point>(res.Value.LastModified);
+			hfh.last_modified = std::chrono::system_clock::to_time_t(last_modified);
+		} catch (const Azure::Storage::StorageException &e) {
+			throw IOException(
+			    "AzureBlobStorageFileSystem open file '%s' failed with code'%s', Reason Phrase: '%s', Message: '%s'",
+			    hfh.path, e.ErrorCode, e.ReasonPhrase, e.Message);
+		} catch (const std::exception &e) {
+			throw IOException(
+			    "AzureBlobStorageFileSystem could not open file: '%s', unknown error occurred, this could mean "
+			    "the credentials used were wrong. Original error message: '%s' ",
+			    hfh.path, e.what());
+		}
+	}
+}
+
+void AzureDfsStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out,
+                                          idx_t buffer_out_len) {
+	auto &afh = handle.Cast<AzureDfsStorageFileHandle>();
+	try {
+		// Specify the range
+		Azure::Core::Http::HttpRange range;
+		range.Offset = (int64_t)file_offset;
+		range.Length = buffer_out_len;
+		Azure::Storage::Files::DataLake::DownloadFileToOptions options;
+		options.Range = range;
+		options.TransferOptions.Concurrency = afh.read_options.transfer_concurrency;
+		options.TransferOptions.InitialChunkSize = afh.read_options.transfer_chunk_size;
+		options.TransferOptions.ChunkSize = afh.read_options.transfer_chunk_size;
+		auto res = afh.file_client.DownloadTo((uint8_t *)buffer_out, buffer_out_len, options);
+
+	} catch (const Azure::Storage::StorageException &e) {
+		throw IOException("AzureBlobStorageFileSystem Read to '%s' failed with %s Reason Phrase: %s", afh.path,
+		                  e.ErrorCode, e.ReasonPhrase);
+	}
+}
+
+std::shared_ptr<AzureContextState> AzureDfsStorageFileSystem::CreateStorageContext(FileOpener *opener,
+                                                                                   const string &path,
+                                                                                   const AzureParsedUrl &parsed_url) {
+	auto azure_read_options = ParseAzureReadOptions(opener);
+
+	return std::make_shared<AzureDfsContextState>(ConnectToDfsStorageAccount(opener, path, parsed_url),
+	                                              azure_read_options);
+}
+
 } // namespace duckdb
