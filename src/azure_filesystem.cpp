@@ -1,6 +1,8 @@
 #include "azure_filesystem.hpp"
+#include "duckdb/common/exception.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/main/client_context.hpp"
+#include <azure/storage/common/storage_exception.hpp>
 
 namespace duckdb {
 
@@ -31,8 +33,23 @@ AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, string path, uint8_
 }
 
 void AzureFileHandle::PostConstruct() {
-	if (flags & FileFlags::FILE_FLAGS_READ) {
-		static_cast<AzureStorageFileSystem &>(file_system).LoadRemoteFileInfo(*this);
+	static_cast<AzureStorageFileSystem &>(file_system).LoadFileInfo(*this);
+}
+
+void AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
+	if (handle.flags & FileFlags::FILE_FLAGS_READ) {
+		try {
+			LoadRemoteFileInfo(handle);
+		} catch (const Azure::Storage::StorageException &e) {
+			throw IOException(
+			    "AzureBlobStorageFileSystem open file '%s' failed with code'%s', Reason Phrase: '%s', Message: '%s'",
+			    handle.path, e.ErrorCode, e.ReasonPhrase, e.Message);
+		} catch (const std::exception &e) {
+			throw IOException(
+			    "AzureBlobStorageFileSystem could not open file: '%s', unknown error occurred, this could mean "
+			    "the credentials used were wrong. Original error message: '%s' ",
+			    handle.path, e.what());
+		}
 	}
 }
 
@@ -194,6 +211,11 @@ AzureReadOptions AzureStorageFileSystem::ParseAzureReadOptions(FileOpener *opene
 	}
 
 	return options;
+}
+
+time_t AzureStorageFileSystem::ToTimeT(const Azure::DateTime &dt) {
+	auto time_point = static_cast<std::chrono::system_clock::time_point>(dt);
+	return std::chrono::system_clock::to_time_t(time_point);
 }
 
 } // namespace duckdb

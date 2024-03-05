@@ -5,6 +5,7 @@
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/main/client_context_state.hpp"
+#include <azure/core/datetime.hpp>
 #include <ctime>
 #include <cstdint>
 
@@ -95,20 +96,22 @@ public:
 	void Seek(FileHandle &handle, idx_t location) override;
 	void FileSync(FileHandle &handle) override;
 
-	virtual void LoadRemoteFileInfo(AzureFileHandle &handle) = 0;
+	void LoadFileInfo(AzureFileHandle &handle);
 
 protected:
 	virtual duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, uint8_t flags, FileLockType lock,
 	                                                         FileCompressionType compression, FileOpener *opener) = 0;
 	virtual void ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len) = 0;
+
 	virtual const string &GetContextPrefix() const = 0;
+	std::shared_ptr<AzureContextState> GetOrCreateStorageContext(FileOpener *opener, const string &path,
+	                                                             const AzureParsedUrl &parsed_url);
 	virtual std::shared_ptr<AzureContextState> CreateStorageContext(FileOpener *opener, const string &path,
 	                                                                const AzureParsedUrl &parsed_url) = 0;
 
-	std::shared_ptr<AzureContextState> GetOrCreateStorageContext(FileOpener *opener, const string &path,
-	                                                             const AzureParsedUrl &parsed_url);
-
+	virtual void LoadRemoteFileInfo(AzureFileHandle &handle) = 0;
 	static AzureReadOptions ParseAzureReadOptions(FileOpener *opener);
+	static time_t ToTimeT(const Azure::DateTime &dt);
 };
 
 } // namespace duckdb

@@ -145,25 +145,10 @@ vector<string> AzureDfsStorageFileSystem::Glob(const string &path, FileOpener *o
 
 void AzureDfsStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 	auto &hfh = handle.Cast<AzureDfsStorageFileHandle>();
-	if (hfh.flags & FileFlags::FILE_FLAGS_READ) {
-		try {
-			auto res = hfh.file_client.GetProperties();
 
-			hfh.length = res.Value.FileSize;
-
-			auto last_modified = static_cast<std::chrono::system_clock::time_point>(res.Value.LastModified);
-			hfh.last_modified = std::chrono::system_clock::to_time_t(last_modified);
-		} catch (const Azure::Storage::StorageException &e) {
-			throw IOException(
-			    "AzureBlobStorageFileSystem open file '%s' failed with code'%s', Reason Phrase: '%s', Message: '%s'",
-			    hfh.path, e.ErrorCode, e.ReasonPhrase, e.Message);
-		} catch (const std::exception &e) {
-			throw IOException(
-			    "AzureBlobStorageFileSystem could not open file: '%s', unknown error occurred, this could mean "
-			    "the credentials used were wrong. Original error message: '%s' ",
-			    hfh.path, e.what());
-		}
-	}
+	auto res = hfh.file_client.GetProperties();
+	hfh.length = res.Value.FileSize;
+	hfh.last_modified = ToTimeT(res.Value.LastModified);
 }
 
 void AzureDfsStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out,

@@ -5,14 +5,24 @@
 # Require statement will ensure this test is run with this extension loaded
 require azure
 
-require-env AZURE_STORAGE_DFS_STORAGE_NAME
+require-env DUCKDB_AZ_ADLS_GEN2
 
-require-env AZURE_STORAGE_DFS_CONNECTION_STRING
+require-env AZURE_TENANT_ID
+
+require-env AZURE_CLIENT_ID
+
+require-env AZURE_CLIENT_SECRET
+
+require-env AZURE_STORAGE_ACCOUNT
 
 statement ok
-CREATE SECRET s1 (
+CREATE SECRET spn (
     TYPE AZURE,
-    CONNECTION_STRING '${AZURE_STORAGE_DFS_CONNECTION_STRING}'
+    PROVIDER SERVICE_PRINCIPAL,
+    TENANT_ID '${AZURE_TENANT_ID}',
+    CLIENT_ID '${AZURE_CLIENT_ID}',
+    CLIENT_SECRET '${AZURE_CLIENT_SECRET}',
+    ACCOUNT_NAME '${AZURE_STORAGE_ACCOUNT}'
 );
 
 query I
@@ -25,11 +35,13 @@ SELECT count(*) FROM 'abfss://hn1/key1=*/*.csv';
 ----
 9
 
+# Check with wildcard and depth
 query I
 SELECT count(*) FROM 'abfss://hn1/*/*/*.csv';
 ----
 6
 
+# Check with absolute path
 query I
 SELECT count(*) FROM 'abfss://hn1/data.csv';
 ----
@@ -37,7 +49,7 @@ SELECT count(*) FROM 'abfss://hn1/data.csv';
 
 # Check fully qualified name
 query I
-SELECT count(*) FROM 'abfss://${AZURE_STORAGE_DFS_STORAGE_NAME}.dfs.core.windows.net/hn1/*/*/*.csv';
+SELECT count(*) FROM 'abfss://${AZURE_STORAGE_ACCOUNT}.dfs.core.windows.net/hn1/*/*/*.csv';
 ----
 6
 

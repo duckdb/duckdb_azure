@@ -161,25 +161,10 @@ vector<string> AzureBlobStorageFileSystem::Glob(const string &path, FileOpener *
 
 void AzureBlobStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 	auto &hfh = handle.Cast<AzureBlobStorageFileHandle>();
-	if (hfh.flags & FileFlags::FILE_FLAGS_READ) {
-		try {
-			auto res = hfh.blob_client.GetProperties();
 
-			hfh.length = res.Value.BlobSize;
-
-			auto last_modified = static_cast<std::chrono::system_clock::time_point>(res.Value.LastModified);
-			hfh.last_modified = std::chrono::system_clock::to_time_t(last_modified);
-		} catch (const Azure::Storage::StorageException &e) {
-			throw IOException(
-			    "AzureBlobStorageFileSystem open file '%s' failed with code'%s', Reason Phrase: '%s', Message: '%s'",
-			    hfh.path, e.ErrorCode, e.ReasonPhrase, e.Message);
-		} catch (const std::exception &e) {
-			throw IOException(
-			    "AzureBlobStorageFileSystem could not open file: '%s', unknown error occurred, this could mean "
-			    "the credentials used were wrong. Original error message: '%s' ",
-			    hfh.path, e.what());
-		}
-	}
+	auto res = hfh.blob_client.GetProperties();
+	hfh.length = res.Value.BlobSize;
+	hfh.last_modified = ToTimeT(res.Value.LastModified);
 }
 
 bool AzureBlobStorageFileSystem::FileExists(const string &filename) {
