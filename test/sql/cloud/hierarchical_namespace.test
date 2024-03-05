@@ -16,6 +16,9 @@ require-env AZURE_CLIENT_SECRET
 require-env AZURE_STORAGE_ACCOUNT
 
 statement ok
+set allow_persistent_secrets=false
+
+statement ok
 CREATE SECRET spn (
     TYPE AZURE,
     PROVIDER SERVICE_PRINCIPAL,
@@ -24,6 +27,21 @@ CREATE SECRET spn (
     CLIENT_SECRET '${AZURE_CLIENT_SECRET}',
     ACCOUNT_NAME '${AZURE_STORAGE_ACCOUNT}'
 );
+
+# Check data integrity for Azure ADLS GEN2 storage account
+query I
+SELECT file FROM glob('abfss://hn1/**') ORDER BY file
+----
+abfss://hn1/data.csv
+abfss://hn1/key1=my/data.csv
+abfss://hn1/key1=our/data.csv
+abfss://hn1/key1=our/hidden/data.csv
+
+# Check data integrity for Azure ADLS GEN2 storage account
+statement error
+SELECT file FROM glob('abfss://hn1/**/*.csv') ORDER BY file
+----
+Invalid Input Error: abfss do not manage recursive lookup patterns, **/*.csv is therefor illegal, only pattern ending by ** are allowed.
 
 query I
 SELECT count(*) FROM 'abfss://hn1/key1=m*/*.csv';

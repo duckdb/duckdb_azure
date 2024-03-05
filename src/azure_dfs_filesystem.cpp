@@ -1,5 +1,6 @@
 #include "azure_dfs_filesystem.hpp"
 #include "azure_storage_account_client.hpp"
+#include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar/string_functions.hpp"
 #include <algorithm>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -24,8 +25,19 @@ inline static bool IsDfsScheme(const string &fpath) {
 
 static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient &fs, const std::string &path,
                  const string &path_pattern, std::size_t end_match, std::vector<std::string> *out_result) {
-	constexpr bool recursive = false;
 	auto directory_client = fs.GetDirectoryClient(path);
+
+	bool recursive = false;
+	const auto double_star = path_pattern.rfind("**", end_match);
+	if (double_star != std::string::npos) {
+		if (path_pattern.length() > end_match) {
+			throw InvalidInputException("abfss do not manage recursive lookup patterns, %s is therefor illegal, only "
+			                            "pattern ending by ** are allowed.",
+			                            path_pattern);
+		}
+		// pattern end with a **, perform recursive listing from this point
+		recursive = true;
+	}
 
 	Azure::Storage::Files::DataLake::ListPathsOptions options;
 	while (true) {
@@ -33,13 +45,15 @@ static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 
 		for (const auto &elt : res.Paths) {
 			if (elt.IsDirectory) {
-				if (LikeFun::Glob(elt.Name.data(), elt.Name.length(), path_pattern.data(), end_match)) {
-					if (end_match >= path_pattern.length()) {
-						// Skip, no way there will be matches anymore
-						continue;
+				if (!recursive) { // Only perform recursive call if we are not already processing recursive result
+					if (LikeFun::Glob(elt.Name.data(), elt.Name.length(), path_pattern.data(), end_match)) {
+						if (end_match >= path_pattern.length()) {
+							// Skip, no way there will be matches anymore
+							continue;
+						}
+						Walk(fs, elt.Name, path_pattern,
+						     std::min(path_pattern.length(), path_pattern.find('/', end_match + 1)), out_result);
 					}
-					Walk(fs, elt.Name, path_pattern,
-					     std::min(path_pattern.length(), path_pattern.find('/', end_match + 1)), out_result);
 				}
 			} else {
 				// File
