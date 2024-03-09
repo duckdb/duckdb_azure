@@ -31,9 +31,9 @@ static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 	const auto double_star = path_pattern.rfind("**", end_match);
 	if (double_star != std::string::npos) {
 		if (path_pattern.length() > end_match) {
-			throw InvalidInputException("abfss do not manage recursive lookup patterns, %s is therefor illegal, only "
-			                            "pattern ending by ** are allowed.",
-			                            path_pattern);
+			throw NotImplementedException("abfss do not manage recursive lookup patterns, %s is therefor illegal, only "
+			                              "pattern ending by ** are allowed.",
+			                              path_pattern);
 		}
 		// pattern end with a **, perform recursive listing from this point
 		recursive = true;
