@@ -34,12 +34,12 @@ abfss://testing-private/README.md
 abfss://testing-private/l.csv
 abfss://testing-private/l.parquet
 abfss://testing-private/lineitem.csv
-abfss://testing-private/partitioned/l_receipmonth=1997/l_shipmode=AIR/data.csv
-abfss://testing-private/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data.csv
-abfss://testing-private/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data.csv
-abfss://testing-private/partitioned/l_receipmonth=1998/l_shipmode=AIR/data.csv
-abfss://testing-private/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data.csv
-abfss://testing-private/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data.csv
+abfss://testing-private/partitioned/l_receipmonth=1997/l_shipmode=AIR/data_0.csv
+abfss://testing-private/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data_0.csv
+abfss://testing-private/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data_0.csv
+abfss://testing-private/partitioned/l_receipmonth=1998/l_shipmode=AIR/data_0.csv
+abfss://testing-private/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data_0.csv
+abfss://testing-private/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data_0.csv
 
 # Check data integrity for Azure ADLS GEN2 storage account
 statement error
@@ -59,7 +59,7 @@ SELECT count(*) FROM 'abfss://testing-private/partitioned/l_receipmonth=*/l_ship
 
 # Check with absolute path
 query I
-SELECT count(*) FROM 'abfss://testing-private/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data.csv';
+SELECT count(*) FROM 'abfss://testing-private/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data_0.csv';
 ----
 1291
 
@@ -76,9 +76,9 @@ SET azure_http_stats = true;
 query II
 EXPLAIN ANALYZE SELECT count(*) FROM 'abfss://testing-private/partitioned/l_receipmonth=*7/l_shipmode=TRUCK/*.csv';
 ----
-analyzed_plan	<REGEX>:.*HTTP Stats\:.*in\: 299\.9 KiB.*\#HEAD\: 1.*GET\: 4.*PUT\: 0.*\#POST\: 0.*
+analyzed_plan	<REGEX>:.*HTTP Stats\:.*in\: 322\.0 KiB.*\#HEAD\: 1.*GET\: 4.*PUT\: 0.*\#POST\: 0.*
 
 query II
 EXPLAIN ANALYZE SELECT count(*) FROM 'azure://testing-private/partitioned/l_receipmonth=*7/l_shipmode=TRUCK/*.csv';
 ----
-analyzed_plan	<REGEX>:.*HTTP Stats\:.*in\: 308\.0 KiB.*\#HEAD\: 1.*GET\: 2.*PUT\: 0.*\#POST\: 0.*
+analyzed_plan	<REGEX>:.*HTTP Stats\:.*in\: 330\.1 KiB.*\#HEAD\: 1.*GET\: 2.*PUT\: 0.*\#POST\: 0.*

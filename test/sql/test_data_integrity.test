@@ -20,12 +20,12 @@ azure://testing-public/README.md
 azure://testing-public/l.csv
 azure://testing-public/l.parquet
 azure://testing-public/lineitem.csv
-azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=AIR/data.csv
-azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data.csv
-azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data.csv
-azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=AIR/data.csv
-azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data.csv
-azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data.csv
+azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=AIR/data_0.csv
+azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data_0.csv
+azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data_0.csv
+azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=AIR/data_0.csv
+azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data_0.csv
+azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data_0.csv
 
 query I
 SELECT file FROM glob("azure://testing-private/**") WHERE contains(file, '.') ORDER BY file;
@@ -34,12 +34,12 @@ azure://testing-private/README.md
 azure://testing-private/l.csv
 azure://testing-private/l.parquet
 azure://testing-private/lineitem.csv
-azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=AIR/data.csv
-azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data.csv
-azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data.csv
-azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=AIR/data.csv
-azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data.csv
-azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data.csv
+azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=AIR/data_0.csv
+azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data_0.csv
+azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data_0.csv
+azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=AIR/data_0.csv
+azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data_0.csv
+azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data_0.csv
 
 ### Check each file individually
 # l.csv
@@ -72,63 +72,63 @@ FROM 'azure://testing-public/lineitem.csv';
 query I nosort file3
 FROM 'azure://testing-private/lineitem.csv';
 
-# partitioned/l_receipmonth=1997/l_shipmode=AIR/data.csv
+# partitioned/l_receipmonth=1997/l_shipmode=AIR/data_0.csv
 query I nosort file4
-FROM './data/partitioned/l_receipmonth=1997/l_shipmode=AIR/data.csv';
-
-query I nosort file4
-FROM 'azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=AIR/data.csv';
+FROM './data/partitioned/l_receipmonth=1997/l_shipmode=AIR/data_0.csv';
 
 query I nosort file4
-FROM 'azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=AIR/data.csv';
+FROM 'azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=AIR/data_0.csv';
 
-# partitioned/l_receipmonth=1997/l_shipmode=SHIP/data.csv
+query I nosort file4
+FROM 'azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=AIR/data_0.csv';
+
+# partitioned/l_receipmonth=1997/l_shipmode=SHIP/data_0.csv
 query I nosort file5
-FROM './data/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data.csv';
+FROM './data/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data_0.csv';
 
 query I nosort file5
-FROM 'azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data.csv';
+FROM 'azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data_0.csv';
 
 query I nosort file5
-FROM 'azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data.csv';
+FROM 'azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=SHIP/data_0.csv';
 
-# partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data.csv
+# partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data_0.csv
 query I nosort file6
-FROM './data/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data.csv';
-
-query I nosort file6
-FROM 'azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data.csv';
+FROM './data/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data_0.csv';
 
 query I nosort file6
-FROM 'azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data.csv';
+FROM 'azure://testing-public/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data_0.csv';
 
-# partitioned/l_receipmonth=1998/l_shipmode=AIR/data.csv
+query I nosort file6
+FROM 'azure://testing-private/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data_0.csv';
+
+# partitioned/l_receipmonth=1998/l_shipmode=AIR/data_0.csv
 query I nosort file7
-FROM './data/partitioned/l_receipmonth=1998/l_shipmode=AIR/data.csv';
+FROM './data/partitioned/l_receipmonth=1998/l_shipmode=AIR/data_0.csv';
 
 query I nosort file7
-FROM 'azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=AIR/data.csv';
+FROM 'azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=AIR/data_0.csv';
 
 query I nosort file7
-FROM 'azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=AIR/data.csv';
+FROM 'azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=AIR/data_0.csv';
 
-# partitioned/l_receipmonth=1998/l_shipmode=SHIP/data.csv
+# partitioned/l_receipmonth=1998/l_shipmode=SHIP/data_0.csv
 query I nosort file8
-FROM './data/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data.csv';
-
-query I nosort file8
-FROM 'azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data.csv';
+FROM './data/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data_0.csv';
 
 query I nosort file8
-FROM 'azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data.csv';
+FROM 'azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data_0.csv';
 
-# partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data.csv
+query I nosort file8
+FROM 'azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=SHIP/data_0.csv';
+
+# partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data_0.csv
 query I nosort file9
-FROM './data/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data.csv';
+FROM './data/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data_0.csv';
 
 query I nosort file9
-FROM 'azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data.csv';
+FROM 'azure://testing-public/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data_0.csv';
 
 query I nosort file9
-FROM 'azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data.csv';
+FROM 'azure://testing-private/partitioned/l_receipmonth=1998/l_shipmode=TRUCK/data_0.csv';
 
