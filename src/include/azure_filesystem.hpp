@@ -1,14 +1,15 @@
 #pragma once
 
-#include "duckdb.hpp"
-#include "duckdb/main/client_context.hpp"
 #include "azure_parsed_url.hpp"
-#include <azure/storage/blobs/blob_client.hpp>
-#include <azure/storage/blobs/blob_service_client.hpp>
-#include <string>
+#include "duckdb/common/assert.hpp"
+#include "duckdb/common/file_opener.hpp"
+#include "duckdb/common/file_system.hpp"
+#include "duckdb/main/client_context_state.hpp"
+#include <azure/core/datetime.hpp>
+#include <ctime>
+#include <cstdint>
 
 namespace duckdb {
-class HTTPState;
 
 struct AzureReadOptions {
 	int32_t transfer_concurrency = 5;
@@ -20,31 +21,48 @@ class AzureContextState : public ClientContextState {
 public:
 	const AzureReadOptions read_options;
 
-private:
-	Azure::Storage::Blobs::BlobServiceClient service_client;
-	bool is_valid;
-
 public:
-	AzureContextState(Azure::Storage::Blobs::BlobServiceClient client, const AzureReadOptions &azure_read_options);
-	Azure::Storage::Blobs::BlobContainerClient GetBlobContainerClient(const std::string &blobContainerName) const;
-	bool IsValid() const;
+	virtual bool IsValid() const;
 	void QueryEnd() override;
+
+	template <class TARGET>
+	TARGET &As() {
+		D_ASSERT(dynamic_cast<TARGET *>(this));
+		return reinterpret_cast<TARGET &>(*this);
+	}
+	template <class TARGET>
+	const TARGET &As() const {
+		D_ASSERT(dynamic_cast<const TARGET *>(this));
+		return reinterpret_cast<const TARGET &>(*this);
+	}
+
+protected:
+	AzureContextState(const AzureReadOptions &read_options);
+
+protected:
+	bool is_valid;
 };
 
-class AzureStorageFileHandle : public FileHandle {
-public:
-	AzureStorageFileHandle(FileSystem &fs, string path, uint8_t flags, Azure::Storage::Blobs::BlobClient blob_client,
-	                       const AzureReadOptions &read_options);
-	~AzureStorageFileHandle() override = default;
+class AzureStorageFileSystem;
 
+class AzureFileHandle : public FileHandle {
 public:
+	virtual void PostConstruct();
 	void Close() override {
 	}
 
-	uint8_t flags;
+protected:
+	AzureFileHandle(AzureStorageFileSystem &fs, string path, uint8_t flags, const AzureReadOptions &read_options);
+
+public:
+	const uint8_t flags;
+
+	// File info
 	idx_t length;
 	time_t last_modified;
 
+	// Read buffer
+	duckdb::unique_ptr<data_t[]> read_buffer;
 	// Read info
 	idx_t buffer_available;
 	idx_t buffer_idx;
@@ -52,32 +70,18 @@ public:
 	idx_t buffer_start;
 	idx_t buffer_end;
 
-	// Read buffer
-	duckdb::unique_ptr<data_t[]> read_buffer;
-
-	// Azure Blob Client
-	Azure::Storage::Blobs::BlobClient blob_client;
-
 	const AzureReadOptions read_options;
 };
 
 class AzureStorageFileSystem : public FileSystem {
 public:
+	// FS methods
 	duckdb::unique_ptr<FileHandle> OpenFile(const string &path, uint8_t flags, FileLockType lock = DEFAULT_LOCK,
 	                                        FileCompressionType compression = DEFAULT_COMPRESSION,
-	                                        FileOpener *opener = nullptr) final;
+	                                        FileOpener *opener = nullptr) override;
 
-	vector<string> Glob(const string &path, FileOpener *opener = nullptr) override;
-
-	// FS methods
 	void Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) override;
 	int64_t Read(FileHandle &handle, void *buffer, int64_t nr_bytes) override;
-	void FileSync(FileHandle &handle) override;
-	int64_t GetFileSize(FileHandle &handle) override;
-	time_t GetLastModifiedTime(FileHandle &handle) override;
-	bool FileExists(const string &filename) override;
-	void Seek(FileHandle &handle, idx_t location) override;
-	bool CanHandleFile(const string &fpath) override;
 	bool CanSeek() override {
 		return true;
 	}
@@ -87,22 +91,27 @@ public:
 	bool IsPipe(const string &filename) override {
 		return false;
 	}
-	string GetName() const override {
-		return "AzureStorageFileSystem";
-	}
+	int64_t GetFileSize(FileHandle &handle) override;
+	time_t GetLastModifiedTime(FileHandle &handle) override;
+	void Seek(FileHandle &handle, idx_t location) override;
+	void FileSync(FileHandle &handle) override;
 
-	static void Verify();
+	void LoadFileInfo(AzureFileHandle &handle);
 
 protected:
-	static AzureParsedUrl ParseUrl(const string &url);
-	static std::shared_ptr<AzureContextState> GetOrCreateStorageContext(FileOpener *opener, const string &path,
-	                                                                    const AzureParsedUrl &parsed_url);
-	static std::shared_ptr<AzureContextState> CreateStorageContext(FileOpener *opener, const string &path,
-	                                                               const AzureParsedUrl &parsed_url);
-	static void ReadRange(FileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len);
-	virtual duckdb::unique_ptr<AzureStorageFileHandle> CreateHandle(const string &path, uint8_t flags,
-	                                                                FileLockType lock, FileCompressionType compression,
-	                                                                FileOpener *opener);
+	virtual duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, uint8_t flags, FileLockType lock,
+	                                                         FileCompressionType compression, FileOpener *opener) = 0;
+	virtual void ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len) = 0;
+
+	virtual const string &GetContextPrefix() const = 0;
+	std::shared_ptr<AzureContextState> GetOrCreateStorageContext(FileOpener *opener, const string &path,
+	                                                             const AzureParsedUrl &parsed_url);
+	virtual std::shared_ptr<AzureContextState> CreateStorageContext(FileOpener *opener, const string &path,
+	                                                                const AzureParsedUrl &parsed_url) = 0;
+
+	virtual void LoadRemoteFileInfo(AzureFileHandle &handle) = 0;
+	static AzureReadOptions ParseAzureReadOptions(FileOpener *opener);
+	static time_t ToTimeT(const Azure::DateTime &dt);
 };
 
 } // namespace duckdb
