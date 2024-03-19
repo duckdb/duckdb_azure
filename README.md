@@ -1,5 +1,5 @@
 # DuckDB Azure Extension
-This extension adds a filesystem abstraction for Azure blob storage to DuckDB. To use it, install latest (>= v0.10.0) DuckDB. The extension currently supports only **reads** and **globs**.
+This extension adds a filesystem abstraction for Azure blob storage to DuckDB. To use it, install latest DuckDB. The extension currently supports only **reads** and **globs**.
 
 The easiest way to get started is by using a connection string to create a DuckDB secret:
 ```sql
