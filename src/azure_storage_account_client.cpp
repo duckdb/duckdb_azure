@@ -1,10 +1,15 @@
 #include "azure_storage_account_client.hpp"
 
+#include "auth/azure_device_code_credential.hpp"
+#include "auth/azure_device_codes_context.hpp"
 #include "duckdb/catalog/catalog_transaction.hpp"
+#include "duckdb/common/assert.hpp"
 #include "duckdb/common/enums/statement_type.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/file_opener.hpp"
+#include "duckdb/common/optional_ptr.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/common/types/value.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/main/secret/secret.hpp"
@@ -30,6 +35,8 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <unordered_set>
+#include <vector>
 
 namespace duckdb {
 const static std::string DEFAULT_BLOB_ENDPOINT = "blob.core.windows.net";
@@ -193,6 +200,28 @@ CreateClientCredential(const KeyValueSecret &secret,
 
 	return CreateClientCredential(tenant_id.ToString(), client_id.ToString(), client_secret, client_certificate_path,
 	                              transport_options);
+}
+
+static std::shared_ptr<AzureDeviceCodeCredential>
+CreateDeviceCodeCredential(const KeyValueSecret &secret,
+                           const Azure::Core::Http::Policies::TransportOptions &transport_options,
+                           const optional_ptr<const AzureDeviceCodeInfo> &device_code_info = nullptr) {
+	constexpr bool error_on_missing = true;
+	auto tenant_id = secret.TryGetValue("tenant_id", error_on_missing).ToString();
+	auto client_id = secret.TryGetValue("client_id", error_on_missing).ToString();
+	auto oauth_scopes_value = secret.TryGetValue("oauth_scopes", error_on_missing).ToString();
+	std::vector<std::string> oauth_scopes = StringUtil::Split(oauth_scopes_value, ' ');
+
+	if (device_code_info) {
+		return std::make_shared<AzureDeviceCodeCredential>(
+		    tenant_id, client_id, std::unordered_set<std::string>(oauth_scopes.begin(), oauth_scopes.end()),
+		    *device_code_info, ToTokenCredentialOptions(transport_options));
+
+	} else {
+		return std::make_shared<AzureDeviceCodeCredential>(
+		    tenant_id, client_id, std::unordered_set<std::string>(oauth_scopes.begin(), oauth_scopes.end()),
+		    ToTokenCredentialOptions(transport_options));
+	}
 }
 
 static std::shared_ptr<Azure::Core::Http::HttpTransport>
@@ -403,7 +432,42 @@ GetDfsStorageAccountClientFromServicePrincipalProvider(FileOpener *opener, const
 
 	auto account_url =
 	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_DFS_ENDPOINT);
-	;
+
+	auto dfs_options = ToDfsClientOptions(transport_options, GetHttpState(opener));
+	return Azure::Storage::Files::DataLake::DataLakeServiceClient(account_url, token_credential, dfs_options);
+}
+
+static Azure::Storage::Files::DataLake::DataLakeServiceClient
+GetDfsStorageAccountClientFromDeviceCodeProvider(FileOpener *opener, const KeyValueSecret &secret,
+                                                 const AzureParsedUrl &azure_parsed_url) {
+	auto context = opener->TryGetClientContext();
+	if (!context) {
+		throw InternalException("Context cannot be null!");
+	}
+	auto device_codes_info_context_it = context->registered_state.find(AzureDeviceCodesClientContextState::CONTEXT_KEY);
+	if (device_codes_info_context_it == context->registered_state.end()) {
+		throw InternalException(
+		    "Not device code has been initialized did you run `SELECT * FROM azure_devicecode('%s');`",
+		    secret.GetName());
+	}
+
+	D_ASSERT(dynamic_cast<AzureDeviceCodesClientContextState *>(device_codes_info_context_it->second.get()) != nullptr);
+	const auto &device_code_info_by_secret =
+	    reinterpret_cast<AzureDeviceCodesClientContextState &>(*device_codes_info_context_it->second)
+	        .device_code_info_by_secret;
+	auto device_code_info_it = device_code_info_by_secret.find(secret.GetName());
+	if (device_code_info_it == device_code_info_by_secret.end()) {
+		throw InternalException(
+		    "Not device code has been initialized did you run `SELECT * FROM azure_devicecode('%s');`",
+		    secret.GetName());
+	}
+
+	auto transport_options = GetTransportOptions(opener, secret);
+	auto token_credential = CreateDeviceCodeCredential(secret, transport_options, &device_code_info_it->second);
+
+	auto account_url =
+	    azure_parsed_url.is_fully_qualified ? AccountUrl(azure_parsed_url) : AccountUrl(secret, DEFAULT_DFS_ENDPOINT);
+
 	auto dfs_options = ToDfsClientOptions(transport_options, GetHttpState(opener));
 	return Azure::Storage::Files::DataLake::DataLakeServiceClient(account_url, token_credential, dfs_options);
 }
@@ -418,6 +482,8 @@ GetBlobStorageAccountClient(FileOpener *opener, const KeyValueSecret &secret, co
 		return GetBlobStorageAccountClientFromCredentialChainProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "service_principal") {
 		return GetBlobStorageAccountClientFromServicePrincipalProvider(opener, secret, azure_parsed_url);
+	} else if (provider == "device_code") {
+		// TODO implements:
 	}
 
 	throw InvalidInputException("Unsupported provider type %s for azure", provider);
@@ -433,6 +499,8 @@ GetDfsStorageAccountClient(FileOpener *opener, const KeyValueSecret &secret, con
 		return GetDfsStorageAccountClientFromCredentialChainProvider(opener, secret, azure_parsed_url);
 	} else if (provider == "service_principal") {
 		return GetDfsStorageAccountClientFromServicePrincipalProvider(opener, secret, azure_parsed_url);
+	} else if (provider == "device_code") {
+		return GetDfsStorageAccountClientFromDeviceCodeProvider(opener, secret, azure_parsed_url);
 	}
 
 	throw InvalidInputException("Unsupported provider type %s for azure", provider);
@@ -503,6 +571,12 @@ const SecretMatch LookupSecret(FileOpener *opener, const std::string &path) {
 	}
 
 	return {};
+}
+
+std::shared_ptr<AzureDeviceCodeCredential> CreateDeviceCodeCredential(FileOpener *opener,
+                                                                      const KeyValueSecret &secret) {
+	auto transport_options = GetTransportOptions(opener, secret);
+	return CreateDeviceCodeCredential(secret, transport_options);
 }
 
 Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(FileOpener *opener, const std::string &path,

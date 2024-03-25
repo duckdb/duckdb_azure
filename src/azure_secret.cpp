@@ -1,6 +1,7 @@
 #include "azure_secret.hpp"
 #include "azure_dfs_filesystem.hpp"
 #include "duckdb/common/types.hpp"
+#include "duckdb/common/types/value.hpp"
 #include "duckdb/common/unique_ptr.hpp"
 #include "duckdb/main/extension_util.hpp"
 #include "duckdb/main/secret/secret.hpp"
@@ -9,7 +10,6 @@
 #include <azure/identity/default_azure_credential.hpp>
 #include <azure/identity/environment_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
-#include <azure/storage/blobs.hpp>
 
 namespace duckdb {
 constexpr auto COMMON_OPTIONS = {
@@ -26,6 +26,24 @@ static void CopySecret(const std::string &key, const CreateSecretInput &input, K
 	}
 }
 
+template <typename T>
+static void CopySecret(const std::string &key, const CreateSecretInput &input, KeyValueSecret &result,
+                       const T &default_value) {
+	auto val = input.options.find(key);
+
+	if (val != input.options.end()) {
+		result.secret_map[key] = val->second;
+	} else {
+		result.secret_map[key] = Value(default_value);
+	}
+}
+
+static void AddDefaultScopes(vector<string> *scope) {
+	scope->push_back("azure://");
+	scope->push_back("az://");
+	scope->push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
+}
+
 static void RedactCommonKeys(KeyValueSecret &result) {
 	result.redact_keys.insert("proxy_password");
 }
@@ -33,9 +51,7 @@ static void RedactCommonKeys(KeyValueSecret &result) {
 static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context, CreateSecretInput &input) {
 	auto scope = input.scope;
 	if (scope.empty()) {
-		scope.push_back("azure://");
-		scope.push_back("az://");
-		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
+		AddDefaultScopes(&scope);
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
@@ -58,9 +74,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context
 static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext &context, CreateSecretInput &input) {
 	auto scope = input.scope;
 	if (scope.empty()) {
-		scope.push_back("azure://");
-		scope.push_back("az://");
-		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
+		AddDefaultScopes(&scope);
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
@@ -82,9 +96,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContext &context, CreateSecretInput &input) {
 	auto scope = input.scope;
 	if (scope.empty()) {
-		scope.push_back("azure://");
-		scope.push_back("az://");
-		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
+		AddDefaultScopes(&scope);
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
@@ -104,6 +116,30 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContex
 	RedactCommonKeys(*result);
 	result->redact_keys.insert("client_secret");
 	result->redact_keys.insert("client_certificate_path");
+
+	return std::move(result);
+}
+
+static unique_ptr<BaseSecret> CreateAzureSecretFromDeviceCode(ClientContext &context, CreateSecretInput &input) {
+	auto scope = input.scope;
+	if (scope.empty()) {
+		AddDefaultScopes(&scope);
+	}
+
+	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
+
+	// Manage common option that all secret type share
+	for (const auto *key : COMMON_OPTIONS) {
+		CopySecret(key, input, *result);
+	}
+
+	// Manage specific secret option
+	CopySecret("tenant_id", input, *result);
+	CopySecret("client_id", input, *result);
+	CopySecret("oauth_scopes", input, *result, "https://storage.azure.com/.default");
+
+	// Redact sensible keys
+	RedactCommonKeys(*result);
 
 	return std::move(result);
 }
@@ -149,6 +185,13 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	service_principal_function.named_parameters["client_certificate_path"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(service_principal_function);
 	ExtensionUtil::RegisterFunction(instance, service_principal_function);
+
+	CreateSecretFunction device_code_function = {type, "device_code", CreateAzureSecretFromDeviceCode};
+	device_code_function.named_parameters["tenant_id"] = LogicalType::VARCHAR;
+	device_code_function.named_parameters["client_id"] = LogicalType::VARCHAR;
+	device_code_function.named_parameters["oauth_scopes"] = LogicalType::VARCHAR;
+	RegisterCommonSecretParameters(device_code_function);
+	ExtensionUtil::RegisterFunction(instance, device_code_function);
 }
 
 } // namespace duckdb
