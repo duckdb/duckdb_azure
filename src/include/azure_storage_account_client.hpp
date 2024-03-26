@@ -10,7 +10,8 @@
 
 namespace duckdb {
 
-std::shared_ptr<AzureDeviceCodeCredential> CreateDeviceCodeCredential(FileOpener *opener, const KeyValueSecret &secret);
+AzureDeviceCodeCredentialRequester CreateDeviceCodeCredentialRequester(FileOpener *opener,
+                                                                       const KeyValueSecret &secret);
 
 Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(FileOpener *opener, const std::string &path,
                                                                      const AzureParsedUrl &azure_parsed_url);

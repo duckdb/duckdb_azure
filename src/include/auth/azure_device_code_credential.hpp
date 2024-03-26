@@ -13,6 +13,19 @@
 #include <string>
 #include <unordered_set>
 
+/**
+ * Implement the missing DeviceCodeCredential from the C++ SDK
+ * https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code
+ *
+ * Note: The way this has been develop is also a hack on how the workflow (should) work.
+ * In theory the scopes shouldn't be an args of the constructor, they are given when a request
+ * call the #GetToken method and we should call a callback that would inform the user that they
+ * have to go to an URL and enter the user code.
+ * In our case it's hard to prompt the user because when queries are performed we do not known
+ * how DuckDB is really being use(cmd, lib...)
+ * So we split the way we obtains the user/device code and the token retrieval.
+ */
+
 namespace duckdb {
 
 struct AzureDeviceCodeInfo {
@@ -33,25 +46,32 @@ struct AzureDeviceCodeInfo {
 	std::string message;
 };
 
-/**
- * Implement the missing DeviceCodeCredential from the C++ SDK
- * https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code
- *
- * Note: The way this has been develop is also a hack on how the workflow (should) work.
- * In theory the scopes shouldn't be an args of the constructor, they are given when a request
- * call the #GetToken method and we should call a callback that would inform the user that they
- * have to go to an URL and enter the user code.
- * In our case it's hard to prompt the user because when queries are performed we do not known
- * how DuckDB is really being use(cmd, lib...)
- * So we split the way we obtains the user/device code and the token retrieval.
- */
+class AzureDeviceCodeCredentialRequester final {
+public:
+	explicit AzureDeviceCodeCredentialRequester(std::string tenant_id, std::string client_id,
+	                                            std::unordered_set<std::string> scopes,
+	                                            const Azure::Core::Credentials::TokenCredentialOptions &options =
+	                                                Azure::Core::Credentials::TokenCredentialOptions());
+
+	/**
+	 * Send a request to get the user & device code
+	 */
+	AzureDeviceCodeInfo RequestDeviceCode();
+
+private:
+	AzureDeviceCodeInfo HandleDeviceAuthorizationResponse(const Azure::Core::Http::RawResponse &response);
+
+private:
+	const std::string tenant_id;
+	const std::string client_id;
+	const std::unordered_set<std::string> scopes;
+	const std::string encoded_scopes;
+
+	Azure::Core::Http::_internal::HttpPipeline http_pipeline;
+};
+
 class AzureDeviceCodeCredential final : public Azure::Core::Credentials::TokenCredential {
 public:
-	explicit AzureDeviceCodeCredential(std::string tenant_id, std::string client_id,
-	                                   std::unordered_set<std::string> scopes,
-	                                   Azure::Core::Credentials::TokenCredentialOptions const &options =
-	                                       Azure::Core::Credentials::TokenCredentialOptions());
-
 	explicit AzureDeviceCodeCredential(std::string tenant_id, std::string client_id,
 	                                   std::unordered_set<std::string> scopes, AzureDeviceCodeInfo device_code,
 	                                   const Azure::Core::Credentials::TokenCredentialOptions &options =
@@ -60,26 +80,14 @@ public:
 	GetToken(Azure::Core::Credentials::TokenRequestContext const &token_request_context,
 	         Azure::Core::Context const &context) const override;
 
-	/**
-	 * Send a request to get the user & device code
-	 */
-	AzureDeviceCodeInfo RequestDeviceCode();
-
 private:
-	explicit AzureDeviceCodeCredential(std::string tenant_id, std::string client_id,
-	                                   std::unordered_set<std::string> scopes,
-	                                   const Azure::Core::Credentials::TokenCredentialOptions &options,
-	                                   std::unique_ptr<AzureDeviceCodeInfo> device_code_info);
-
-	AzureDeviceCodeInfo HandleDeviceAuthorizationResponse(const Azure::Core::Http::RawResponse &response);
 	Azure::Core::Credentials::AccessToken AuthenticatingUser() const;
 
 private:
 	const std::string tenant_id;
 	const std::string client_id;
 	const std::unordered_set<std::string> scopes;
-	const std::string encoded_scopes;
-	const std::unique_ptr<AzureDeviceCodeInfo> device_code_info;
+	const AzureDeviceCodeInfo device_code_info;
 
 	Azure::Identity::_detail::TokenCache token_cache;
 	Azure::Core::Http::_internal::HttpPipeline http_pipeline;

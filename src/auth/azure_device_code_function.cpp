@@ -65,9 +65,9 @@ static void AzureDeviceCodeImplementation(ClientContext &context, TableFunctionI
 		throw InvalidInputException("azure_devicecode no secret found named %s", bind_data.secret_name);
 	}
 
-	auto device_code_credential = CreateDeviceCodeCredential(ClientData::Get(context).file_opener.get(),
-	                                                         dynamic_cast<const KeyValueSecret &>(*secret->secret));
-	auto device_code_info = device_code_credential->RequestDeviceCode();
+	auto device_code_credential = CreateDeviceCodeCredentialRequester(
+	    ClientData::Get(context).file_opener.get(), dynamic_cast<const KeyValueSecret &>(*secret->secret));
+	auto device_code_info = device_code_credential.RequestDeviceCode();
 
 	auto &device_code_context = context.registered_state[AzureDeviceCodesClientContextState::CONTEXT_KEY];
 	if (!device_code_context) {

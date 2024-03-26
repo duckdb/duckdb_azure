@@ -105,47 +105,33 @@ static std::string EncodeScopes(const std::unordered_set<std::string> &scopes) {
 }
 
 static std::string CacheScopeString(const std::vector<std::string> &scopes) {
-	std::string result;
-	if (scopes.size() <= 1) {
-		for (const auto &scope : scopes) {
-			result += scope;
-		}
-	} else {
+	switch (scopes.size()) {
+	case 0:
+		return "";
+
+	case 1:
+		return scopes[0];
+
+	default: {
+		std::string result;
 		auto copy_scopes = scopes;
 		std::sort(copy_scopes.begin(), copy_scopes.end());
 		for (const auto &scope : copy_scopes) {
 			result += scope;
 		}
+		return result;
 	}
-	return result;
+	}
 }
 
-AzureDeviceCodeCredential::AzureDeviceCodeCredential(std::string tenant_id, std::string client_id,
-                                                     std::unordered_set<std::string> scopes,
-                                                     const Azure::Core::Credentials::TokenCredentialOptions &options)
-    : AzureDeviceCodeCredential(std::move(tenant_id), std::move(client_id), std::move(scopes), options, nullptr) {
+AzureDeviceCodeCredentialRequester::AzureDeviceCodeCredentialRequester(
+    std::string tenant_id, std::string client_id, std::unordered_set<std::string> scopes_p,
+    const Azure::Core::Credentials::TokenCredentialOptions &options)
+    : tenant_id(std::move(tenant_id)), client_id(std::move(client_id)), scopes(std::move(scopes_p)),
+      encoded_scopes(EncodeScopes(scopes)), http_pipeline(options, "identity", "DuckDB", {}, {}) {
 }
 
-AzureDeviceCodeCredential::AzureDeviceCodeCredential(std::string tenant_id, std::string client_id,
-                                                     std::unordered_set<std::string> scopes,
-                                                     AzureDeviceCodeInfo device_code_info,
-                                                     const Azure::Core::Credentials::TokenCredentialOptions &options)
-    : AzureDeviceCodeCredential(std::move(tenant_id), std::move(client_id), std::move(scopes), options,
-                                make_uniq<AzureDeviceCodeInfo>(std::move(device_code_info))) {
-}
-
-AzureDeviceCodeCredential::AzureDeviceCodeCredential(std::string tenant_id, std::string client_id,
-                                                     std::unordered_set<std::string> scopes_p,
-                                                     const Azure::Core::Credentials::TokenCredentialOptions &options,
-                                                     std::unique_ptr<AzureDeviceCodeInfo> device_code_info)
-    : Azure::Core::Credentials::TokenCredential("DeviceCodeCredential"), tenant_id(std::move(tenant_id)),
-      client_id(std::move(client_id)), scopes(std::move(scopes_p)), encoded_scopes(EncodeScopes(scopes)),
-      device_code_info(std::move(device_code_info)), http_pipeline(options, "identity", "DuckDB", {}, {})
-
-{
-}
-
-AzureDeviceCodeInfo AzureDeviceCodeCredential::RequestDeviceCode() {
+AzureDeviceCodeInfo AzureDeviceCodeCredentialRequester::RequestDeviceCode() {
 	const std::string url = "https://login.microsoftonline.com/" + tenant_id + "/oauth2/v2.0/devicecode";
 	const std::string body = "client_id=" + Azure::Core::Url::Encode(client_id) + "&scope=" + encoded_scopes;
 	Azure::Core::IO::MemoryBodyStream body_stream(reinterpret_cast<const std::uint8_t *>(body.data()), body.size());
@@ -160,7 +146,7 @@ AzureDeviceCodeInfo AzureDeviceCodeCredential::RequestDeviceCode() {
 }
 
 AzureDeviceCodeInfo
-AzureDeviceCodeCredential::HandleDeviceAuthorizationResponse(const Azure::Core::Http::RawResponse &response) {
+AzureDeviceCodeCredentialRequester::HandleDeviceAuthorizationResponse(const Azure::Core::Http::RawResponse &response) {
 	const auto &response_body = response.GetBody();
 	const auto response_body_str = std::string(response_body.begin(), response_body.end());
 	if (response.GetStatusCode() == Azure::Core::Http::HttpStatusCode::Ok) {
@@ -168,15 +154,25 @@ AzureDeviceCodeCredential::HandleDeviceAuthorizationResponse(const Azure::Core::
 		ParseJson(std::string(response_body.begin(), response_body.end()), &parsed_response);
 		return parsed_response;
 	} else {
-		throw IOException("[AzureDeviceCodeCredential] Failed to retrieve devicecode HTTP code: %d, details: %s",
-		                  response.GetStatusCode(), response_body_str);
+		throw IOException(
+		    "[AzureDeviceCodeCredentialRequester] Failed to retrieve devicecode HTTP code: %d, details: %s",
+		    response.GetStatusCode(), response_body_str);
 	}
+}
+
+AzureDeviceCodeCredential::AzureDeviceCodeCredential(std::string tenant_id, std::string client_id,
+                                                     std::unordered_set<std::string> scopes_p,
+                                                     AzureDeviceCodeInfo device_code_info,
+                                                     const Azure::Core::Credentials::TokenCredentialOptions &options)
+    : Azure::Core::Credentials::TokenCredential("DeviceCodeCredential"), tenant_id(std::move(tenant_id)),
+      client_id(std::move(client_id)), scopes(std::move(scopes_p)), device_code_info(std::move(device_code_info)),
+      http_pipeline(options, "identity", "DuckDB", {}, {}) {
 }
 
 Azure::Core::Credentials::AccessToken AzureDeviceCodeCredential::AuthenticatingUser() const {
 	// Check if it still possible to retrieve a token!
 	auto now = std::chrono::system_clock::now();
-	if (now >= device_code_info->expires_at) {
+	if (now >= device_code_info.expires_at) {
 		throw IOException("[AzureDeviceCodeCredential] Your previous credential has already expired please "
 		                  "renew it by calling `SELECT * FROM azure_devicecode('<secret name>')`;");
 	}
@@ -184,7 +180,7 @@ Azure::Core::Credentials::AccessToken AzureDeviceCodeCredential::AuthenticatingU
 	const std::string url = "https://login.microsoftonline.com/" + tenant_id + "/oauth2/v2.0/token";
 	const std::string body = "grant_type=urn:ietf:params:oauth:grant-type:device_code"
 	                         "&client_id=" +
-	                         Azure::Core::Url::Encode(client_id) + "&device_code=" + device_code_info->device_code;
+	                         Azure::Core::Url::Encode(client_id) + "&device_code=" + device_code_info.device_code;
 	Azure::Core::IO::MemoryBodyStream body_stream(reinterpret_cast<const std::uint8_t *>(body.data()), body.size());
 
 	Azure::Core::Http::Request http_request(Azure::Core::Http::HttpMethod::Post, Azure::Core::Url(url), &body_stream);
@@ -209,7 +205,7 @@ Azure::Core::Credentials::AccessToken AzureDeviceCodeCredential::AuthenticatingU
 			TryParseJson(response_body_str, &error);
 			if ("authorization_pending" == error.error) {
 				// Wait before retry
-				std::this_thread::sleep_for(device_code_info->interval);
+				std::this_thread::sleep_for(device_code_info.interval);
 			} else if ("authorization_declined" == error.error) {
 				throw IOException("[AzureDeviceCodeCredential] Failed to retrieve user token, end user denied the "
 				                  "authorization request. (error msg: %s)",
@@ -235,7 +231,7 @@ AzureDeviceCodeCredential::GetToken(Azure::Core::Credentials::TokenRequestContex
                                     Azure::Core::Context const &context) const {
 	using Azure::Core::_internal::StringExtensions;
 
-	if (!device_code_info) {
+	if (device_code_info.device_code.empty()) {
 		throw IOException("[AzureDeviceCodeCredential] No device/user code register did you call `SELECT * FROM "
 		                  "azure_devicecode('<secret name>')`;");
 	}
