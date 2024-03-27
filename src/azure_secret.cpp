@@ -136,7 +136,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromDeviceCode(ClientContext &con
 	// Manage specific secret option
 	CopySecret("tenant_id", input, *result);
 	CopySecret("client_id", input, *result);
-	CopySecret("oauth_scopes", input, *result, "https://storage.azure.com/.default");
+	CopySecret("oauth_scopes", input, *result, "https://storage.azure.com/.default offline_access");
 
 	// Redact sensible keys
 	RedactCommonKeys(*result);

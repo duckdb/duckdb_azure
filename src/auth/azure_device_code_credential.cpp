@@ -7,14 +7,15 @@
 #include <azure/core/credentials/credentials.hpp>
 #include <azure/core/datetime.hpp>
 #include <azure/core/http/http.hpp>
-#include <azure/core/internal/environment.hpp>
 #include <azure/core/internal/json/json.hpp>
 #include <azure/core/http/http_status_code.hpp>
-#include <azure/core/internal/strings.hpp>
 #include <azure/core/io/body_stream.hpp>
 #include <azure/core/url.hpp>
+#include <azure/identity/detail/client_credential_core.hpp>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -22,10 +23,6 @@
 #include <vector>
 
 namespace duckdb {
-
-// TODO https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#refresh-the-access-token
-// TODO replace AccessToken by this class ??
-struct RequestDeviceCodeResponse {};
 
 struct HttpResponseError {
 	std::string error;
@@ -48,19 +45,6 @@ static void ParseJson(const std::string &json_str, AzureDeviceCodeInfo *response
 		response->expires_at = now + std::chrono::seconds(json.at("expires_in").get<std::int32_t>());
 		response->interval = std::chrono::seconds(json.at("interval").get<std::int32_t>());
 		response->message = json.at("message").get<std::string>();
-	} catch (const Azure::Core::Json::_internal::json::out_of_range &ex) {
-		throw IOException("[AzureDeviceCodeCredential] Failed to parse Azure response '%s'", ex.what());
-	} catch (const Azure::Core::Json::_internal::json::exception &ex) {
-		throw IOException("[AzureDeviceCodeCredential] Failed to parse JSON Azure response '%s'", ex.what());
-	}
-}
-static void ParseJson(const std::string &json_str, Azure::Core::Credentials::AccessToken *token) {
-	try {
-		auto json = Azure::Core::Json::_internal::json::parse(json_str);
-
-		token->Token = json.at("access_token").get<std::string>();
-		token->ExpiresOn = Azure::DateTime(std::chrono::system_clock::now()) +
-		                   std::chrono::seconds(json.at("expires_in").get<std::int32_t>());
 	} catch (const Azure::Core::Json::_internal::json::out_of_range &ex) {
 		throw IOException("[AzureDeviceCodeCredential] Failed to parse Azure response '%s'", ex.what());
 	} catch (const Azure::Core::Json::_internal::json::exception &ex) {
@@ -104,26 +88,6 @@ static std::string EncodeScopes(const std::unordered_set<std::string> &scopes) {
 	return Azure::Core::Url::Encode(result);
 }
 
-static std::string CacheScopeString(const std::vector<std::string> &scopes) {
-	switch (scopes.size()) {
-	case 0:
-		return "";
-
-	case 1:
-		return scopes[0];
-
-	default: {
-		std::string result;
-		auto copy_scopes = scopes;
-		std::sort(copy_scopes.begin(), copy_scopes.end());
-		for (const auto &scope : copy_scopes) {
-			result += scope;
-		}
-		return result;
-	}
-	}
-}
-
 AzureDeviceCodeCredentialRequester::AzureDeviceCodeCredentialRequester(
     std::string tenant_id, std::string client_id, std::unordered_set<std::string> scopes_p,
     const Azure::Core::Credentials::TokenCredentialOptions &options)
@@ -132,7 +96,7 @@ AzureDeviceCodeCredentialRequester::AzureDeviceCodeCredentialRequester(
 }
 
 AzureDeviceCodeInfo AzureDeviceCodeCredentialRequester::RequestDeviceCode() {
-	const std::string url = "https://login.microsoftonline.com/" + tenant_id + "/oauth2/v2.0/devicecode";
+	const std::string url = Azure::Identity::_detail::AadGlobalAuthority + tenant_id + "/oauth2/v2.0/devicecode";
 	const std::string body = "client_id=" + Azure::Core::Url::Encode(client_id) + "&scope=" + encoded_scopes;
 	Azure::Core::IO::MemoryBodyStream body_stream(reinterpret_cast<const std::uint8_t *>(body.data()), body.size());
 
@@ -165,11 +129,11 @@ AzureDeviceCodeCredential::AzureDeviceCodeCredential(std::string tenant_id, std:
                                                      AzureDeviceCodeInfo device_code_info,
                                                      const Azure::Core::Credentials::TokenCredentialOptions &options)
     : Azure::Core::Credentials::TokenCredential("DeviceCodeCredential"), tenant_id(std::move(tenant_id)),
-      client_id(std::move(client_id)), scopes(std::move(scopes_p)), device_code_info(std::move(device_code_info)),
-      http_pipeline(options, "identity", "DuckDB", {}, {}) {
+      client_id(std::move(client_id)), scopes(std::move(scopes_p)), encoded_scopes(EncodeScopes(scopes)),
+      device_code_info(std::move(device_code_info)), http_pipeline(options, "identity", "DuckDB", {}, {}) {
 }
 
-Azure::Core::Credentials::AccessToken AzureDeviceCodeCredential::AuthenticatingUser() const {
+AzureDeviceCodeCredential::OAuthAccessToken AzureDeviceCodeCredential::AuthenticatingUser() const {
 	// Check if it still possible to retrieve a token!
 	auto now = std::chrono::system_clock::now();
 	if (now >= device_code_info.expires_at) {
@@ -177,10 +141,13 @@ Azure::Core::Credentials::AccessToken AzureDeviceCodeCredential::AuthenticatingU
 		                  "renew it by calling `SELECT * FROM azure_devicecode('<secret name>')`;");
 	}
 
-	const std::string url = "https://login.microsoftonline.com/" + tenant_id + "/oauth2/v2.0/token";
+	const std::string url = Azure::Identity::_detail::AadGlobalAuthority + tenant_id + "/oauth2/v2.0/token";
+	// clang-format off
 	const std::string body = "grant_type=urn:ietf:params:oauth:grant-type:device_code"
-	                         "&client_id=" +
-	                         Azure::Core::Url::Encode(client_id) + "&device_code=" + device_code_info.device_code;
+	                         "&client_id=" + Azure::Core::Url::Encode(client_id) +
+	                         "&device_code=" + device_code_info.device_code;
+	// clang-format on
+
 	Azure::Core::IO::MemoryBodyStream body_stream(reinterpret_cast<const std::uint8_t *>(body.data()), body.size());
 
 	Azure::Core::Http::Request http_request(Azure::Core::Http::HttpMethod::Post, Azure::Core::Url(url), &body_stream);
@@ -193,9 +160,10 @@ Azure::Core::Credentials::AccessToken AzureDeviceCodeCredential::AuthenticatingU
 		const auto &response_body = response->GetBody();
 		const auto response_body_str = std::string(response_body.begin(), response_body.end());
 
-		switch (response->GetStatusCode()) {
+		const auto response_code = response->GetStatusCode();
+		switch (response_code) {
 		case Azure::Core::Http::HttpStatusCode::Ok: {
-			Azure::Core::Credentials::AccessToken token;
+			OAuthAccessToken token;
 			ParseJson(response_body_str, &token);
 			return token;
 		} break;
@@ -219,25 +187,79 @@ Azure::Core::Credentials::AccessToken AzureDeviceCodeCredential::AuthenticatingU
 				    "[AzureDeviceCodeCredential] Failed to retrieve user token already expired. (error msg: %s)",
 				    response_body_str);
 			} else {
-				throw IOException("[AzureDeviceCodeCredential] Unexpected error: %s", response_body_str);
+				throw IOException("[AzureDeviceCodeCredential] Unexpected error (HTTP: %d): %s", response_code,
+				                  response_body_str);
 			}
 		} break;
 		}
 	}
 }
 
+AzureDeviceCodeCredential::OAuthAccessToken AzureDeviceCodeCredential::RefreshToken() const {
+	const std::string url = Azure::Identity::_detail::AadGlobalAuthority + tenant_id + "/oauth2/v2.0/token";
+	// clang-format off
+	const std::string body = "grant_type=refresh_token"
+	                         "&client_id=" + Azure::Core::Url::Encode(client_id) +
+	                         "&scope=" + encoded_scopes +
+	                         "&refresh_token=" + token.refresh_token;
+	// clang-format on
+	Azure::Core::IO::MemoryBodyStream body_stream(reinterpret_cast<const std::uint8_t *>(body.data()), body.size());
+
+	Azure::Core::Http::Request http_request(Azure::Core::Http::HttpMethod::Post, Azure::Core::Url(url), &body_stream);
+	http_request.SetHeader("Content-Type", "application/x-www-form-urlencoded");
+	http_request.SetHeader("Content-Length", std::to_string(body.size()));
+	http_request.SetHeader("Accept", "application/json");
+
+	auto response = http_pipeline.Send(http_request, Azure::Core::Context());
+	const auto &response_body = response->GetBody();
+	const auto response_body_str = std::string(response_body.begin(), response_body.end());
+	const auto response_code = response->GetStatusCode();
+	if (Azure::Core::Http::HttpStatusCode::Ok == response_code) {
+		OAuthAccessToken token;
+		ParseJson(response_body_str, &token);
+		return token;
+	} else {
+		throw IOException(
+		    "[AzureDeviceCodeCredential] Failed to refresh token due to the following error (HTTP %d): %s",
+		    response_code, response_body_str);
+	}
+}
+
+void AzureDeviceCodeCredential::ParseJson(const std::string &json_str, OAuthAccessToken *token) {
+	try {
+		auto json = Azure::Core::Json::_internal::json::parse(json_str);
+
+		// Mandatory
+		token->access_token = json.at("access_token").get<std::string>();
+		token->expires_at = Azure::DateTime(std::chrono::system_clock::now()) +
+		                    std::chrono::seconds(json.at("expires_in").get<std::int32_t>());
+
+		// Optional depending of the scopes
+		if (json.contains("refresh_token")) {
+			token->refresh_token = json.at("refresh_token").get<std::string>();
+		}
+	} catch (const Azure::Core::Json::_internal::json::out_of_range &ex) {
+		throw IOException("[AzureDeviceCodeCredential] Failed to parse Azure response '%s'", ex.what());
+	} catch (const Azure::Core::Json::_internal::json::exception &ex) {
+		throw IOException("[AzureDeviceCodeCredential] Failed to parse JSON Azure response '%s'", ex.what());
+	}
+}
+
+bool AzureDeviceCodeCredential::IsFresh(const AzureDeviceCodeCredential::OAuthAccessToken &token,
+                                        Azure::DateTime::duration minimum_expiration,
+                                        std::chrono::system_clock::time_point now) {
+	return token.expires_at > (Azure::DateTime(now) + minimum_expiration);
+}
+
 Azure::Core::Credentials::AccessToken
 AzureDeviceCodeCredential::GetToken(Azure::Core::Credentials::TokenRequestContext const &token_request_context,
                                     Azure::Core::Context const &context) const {
-	using Azure::Core::_internal::StringExtensions;
-
 	if (device_code_info.device_code.empty()) {
 		throw IOException("[AzureDeviceCodeCredential] No device/user code register did you call `SELECT * FROM "
 		                  "azure_devicecode('<secret name>')`;");
 	}
 
-	if (!token_request_context.TenantId.empty() &&
-	    !StringExtensions::LocaleInvariantCaseInsensitiveEqual(token_request_context.TenantId, tenant_id)) {
+	if (!token_request_context.TenantId.empty() && !StringUtil::CIEquals(token_request_context.TenantId, tenant_id)) {
 
 		throw IOException(
 		    "[AzureDeviceCodeCredential] The current credential is not configured to acquire tokens for tenant '%s'.",
@@ -250,11 +272,29 @@ AzureDeviceCodeCredential::GetToken(Azure::Core::Credentials::TokenRequestContex
 			                  scope);
 		}
 	}
-	auto request_scopes = token_request_context.Scopes;
-	std::sort(request_scopes.begin(), request_scopes.end());
 
-	return token_cache.GetToken(CacheScopeString(token_request_context.Scopes), token_request_context.TenantId,
-	                            token_request_context.MinimumExpiration, [&]() { return AuthenticatingUser(); });
+	{
+		std::shared_lock<std::shared_timed_mutex> read_lock(token_mutex);
+		if (!token.access_token.empty() &&
+		    IsFresh(token, token_request_context.MinimumExpiration, std::chrono::system_clock::now())) {
+			return Azure::Core::Credentials::AccessToken {token.access_token, token.expires_at};
+		}
+	}
+
+	{
+		std::unique_lock<std::shared_timed_mutex> write_lock(token_mutex);
+		if (!token.access_token.empty() &&
+		    IsFresh(token, token_request_context.MinimumExpiration, std::chrono::system_clock::now())) {
+			return Azure::Core::Credentials::AccessToken {token.access_token, token.expires_at};
+		}
+
+		if (token.refresh_token.empty()) {
+			token = AuthenticatingUser();
+		} else {
+			token = RefreshToken();
+		}
+		return Azure::Core::Credentials::AccessToken {token.access_token, token.expires_at};
+	}
 }
 
 } // namespace duckdb

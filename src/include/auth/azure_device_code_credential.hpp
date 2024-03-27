@@ -2,14 +2,13 @@
 
 #include <azure/core/credentials/credentials.hpp>
 #include <azure/core/credentials/token_credential_options.hpp>
+#include <azure/core/datetime.hpp>
 #include <azure/core/http/raw_response.hpp>
 #include <azure/core/internal/http/pipeline.hpp>
-#include <azure/identity/detail/token_cache.hpp>
-#include <azure/identity/detail/client_credential_core.hpp>
 #include <chrono>
 #include <cstdint>
-#include <functional>
 #include <memory>
+#include <shared_mutex>
 #include <string>
 #include <unordered_set>
 
@@ -81,16 +80,38 @@ public:
 	         Azure::Core::Context const &context) const override;
 
 private:
-	Azure::Core::Credentials::AccessToken AuthenticatingUser() const;
+	/**
+	 * When refresh token is set it seen to be valid for 90 days
+	 * @see https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens#token-lifetime
+	 * @see https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#refresh-the-access-token
+	 */
+	struct OAuthAccessToken {
+		// Number of seconds the included access token is valid for.
+		Azure::DateTime expires_at;
+		// Issued for the scopes that were requested.
+		std::string access_token;
+		// Issued if the original scope parameter included offline_access.
+		std::string refresh_token;
+	};
+
+private:
+	OAuthAccessToken AuthenticatingUser() const;
+	OAuthAccessToken RefreshToken() const;
+	static bool IsFresh(const OAuthAccessToken &token, Azure::DateTime::duration minimum_expiration,
+	                    std::chrono::system_clock::time_point now);
+	static void ParseJson(const std::string &json_str, OAuthAccessToken *token);
 
 private:
 	const std::string tenant_id;
 	const std::string client_id;
 	const std::unordered_set<std::string> scopes;
+	const std::string encoded_scopes;
 	const AzureDeviceCodeInfo device_code_info;
 
-	Azure::Identity::_detail::TokenCache token_cache;
 	Azure::Core::Http::_internal::HttpPipeline http_pipeline;
+
+	mutable std::shared_timed_mutex token_mutex;
+	mutable OAuthAccessToken token;
 };
 
 } // namespace duckdb
