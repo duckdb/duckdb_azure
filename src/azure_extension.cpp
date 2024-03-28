@@ -1,6 +1,7 @@
 #define DUCKDB_EXTENSION_MAIN
 
 #include "azure_extension.hpp"
+#include "auth/azure_device_code_function.hpp"
 #include "azure_blob_filesystem.hpp"
 #include "azure_dfs_filesystem.hpp"
 #include "azure_secret.hpp"
@@ -15,6 +16,9 @@ static void LoadInternal(DatabaseInstance &instance) {
 
 	// Load Secret functions
 	CreateAzureSecretFunctions::Register(instance);
+
+	// Load functions
+	RegisterAzureDeviceCodeFunction(instance);
 
 	// Load extension config
 	auto &config = DBConfig::GetConfig(instance);

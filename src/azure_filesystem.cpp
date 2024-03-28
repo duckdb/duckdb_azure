@@ -42,8 +42,8 @@ void AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
 			LoadRemoteFileInfo(handle);
 		} catch (const Azure::Storage::StorageException &e) {
 			throw IOException(
-			    "AzureBlobStorageFileSystem open file '%s' failed with code'%s', Reason Phrase: '%s', Message: '%s'",
-			    handle.path, e.ErrorCode, e.ReasonPhrase, e.Message);
+			    "AzureBlobStorageFileSystem open file '%s' failed with code '%d', Reason Phrase: '%s', Message: '%s'",
+			    handle.path, e.StatusCode, e.ReasonPhrase, e.Message);
 		} catch (const std::exception &e) {
 			throw IOException(
 			    "AzureBlobStorageFileSystem could not open file: '%s', unknown error occurred, this could mean "
