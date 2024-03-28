@@ -1,5 +1,5 @@
 #include "auth/azure_device_code_function.hpp"
-#include "auth/azure_device_codes_context.hpp"
+#include "auth/azure_device_code_context.hpp"
 #include "azure_storage_account_client.hpp"
 #include "duckdb/catalog/catalog_transaction.hpp"
 #include "duckdb/common/assert.hpp"
@@ -65,18 +65,17 @@ static void AzureDeviceCodeImplementation(ClientContext &context, TableFunctionI
 		throw InvalidInputException("azure_devicecode no secret found named %s", bind_data.secret_name);
 	}
 
-	auto device_code_credential = CreateDeviceCodeCredentialRequester(
-	    ClientData::Get(context).file_opener.get(), dynamic_cast<const KeyValueSecret &>(*secret->secret));
+	auto &kv_secret = dynamic_cast<const KeyValueSecret &>(*secret->secret);
+	auto device_code_credential =
+	    CreateDeviceCodeCredentialRequester(ClientData::Get(context).file_opener.get(), kv_secret);
 	auto device_code_info = device_code_credential.RequestDeviceCode();
 
-	auto &device_code_context = context.registered_state[AzureDeviceCodesClientContextState::CONTEXT_KEY];
-	if (!device_code_context) {
-		device_code_context = make_shared<AzureDeviceCodesClientContextState>();
+	const auto context_key = AzureDeviceCodeClientContextState::BuildContextKey(bind_data.secret_name);
+	auto device_code_context_it = context.registered_state.find(context_key);
+	if (device_code_context_it == context.registered_state.end()) {
+		auto device_code_context = make_shared<AzureDeviceCodeClientContextState>(device_code_info);
+		context.registered_state.insert(std::make_pair(context_key, std::move(device_code_context)));
 	}
-
-	D_ASSERT(reinterpret_cast<AzureDeviceCodesClientContextState *>(device_code_context.get()) != nullptr);
-	reinterpret_cast<AzureDeviceCodesClientContextState &>(*device_code_context)
-	    .device_code_info_by_secret.insert(std::make_pair(bind_data.secret_name, device_code_info));
 
 	output.SetCapacity(1);
 	output.SetValue(0, 0, bind_data.secret_name);

@@ -13,7 +13,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(EXTENSION_SOURCES
     src/auth/azure_device_code_credential.cpp
     src/auth/azure_device_code_function.cpp
-    src/auth/azure_device_codes_context.cpp
     src/azure_blob_filesystem.cpp
     src/azure_dfs_filesystem.cpp
     src/azure_extension.cpp

@@ -1,7 +1,7 @@
 #include "azure_storage_account_client.hpp"
 
 #include "auth/azure_device_code_credential.hpp"
-#include "auth/azure_device_codes_context.hpp"
+#include "auth/azure_device_code_context.hpp"
 #include "duckdb/catalog/catalog_transaction.hpp"
 #include "duckdb/common/assert.hpp"
 #include "duckdb/common/enums/statement_type.hpp"
@@ -215,23 +215,18 @@ CreateDeviceCodeCredential(const KeyValueSecret &secret,
 	if (!context) {
 		throw InternalException("Context cannot be null!");
 	}
-	auto device_codes_info_context_it = context->registered_state.find(AzureDeviceCodesClientContextState::CONTEXT_KEY);
-	if (device_codes_info_context_it == context->registered_state.end()) {
+	auto context_key = AzureDeviceCodeClientContextState::BuildContextKey(secret.GetName());
+	auto device_code_info_context_it = context->registered_state.find(context_key);
+	if (device_code_info_context_it == context->registered_state.end()) {
 		throw InternalException(
 		    "Not device code has been initialized did you run `SELECT * FROM azure_devicecode('%s');`",
 		    secret.GetName());
 	}
 
-	D_ASSERT(dynamic_cast<AzureDeviceCodesClientContextState *>(device_codes_info_context_it->second.get()) != nullptr);
-	const auto &device_code_info_by_secret =
-	    reinterpret_cast<AzureDeviceCodesClientContextState &>(*device_codes_info_context_it->second)
-	        .device_code_info_by_secret;
-	auto device_code_info_it = device_code_info_by_secret.find(secret.GetName());
-	if (device_code_info_it == device_code_info_by_secret.end()) {
-		throw InternalException(
-		    "Not device code has been initialized did you run `SELECT * FROM azure_devicecode('%s');`",
-		    secret.GetName());
-	}
+	D_ASSERT(dynamic_cast<AzureDeviceCodeClientContextState *>(device_code_info_context_it->second.get()) != nullptr);
+	auto device_code_info_context = std::shared_ptr<AzureDeviceCodeClientContextState>(
+	    device_code_info_context_it->second,
+	    reinterpret_cast<AzureDeviceCodeClientContextState *>(device_code_info_context_it->second.get()));
 
 	constexpr bool error_on_missing = true;
 	auto tenant_id = secret.TryGetValue("tenant_id", error_on_missing).ToString();
@@ -241,7 +236,7 @@ CreateDeviceCodeCredential(const KeyValueSecret &secret,
 
 	return std::make_shared<AzureDeviceCodeCredential>(
 	    tenant_id, client_id, std::unordered_set<std::string>(oauth_scopes.begin(), oauth_scopes.end()),
-	    device_code_info_it->second, ToTokenCredentialOptions(transport_options));
+	    std::move(device_code_info_context), ToTokenCredentialOptions(transport_options));
 }
 
 static std::shared_ptr<Azure::Core::Http::HttpTransport>

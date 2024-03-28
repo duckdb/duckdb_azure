@@ -27,6 +27,8 @@
 
 namespace duckdb {
 
+class AzureDeviceCodeClientContextState;
+
 struct AzureDeviceCodeInfo {
 	// A long string used to verify the session between the client and the authorization server.
 	// The client uses this parameter to request the access token from the authorization server.
@@ -43,6 +45,20 @@ struct AzureDeviceCodeInfo {
 	// query parameter in the request of the form ?mkt=xx-XX, filling in the appropriate language
 	// culture code.
 	std::string message;
+};
+
+/**
+ * When refresh token is set it seen to be valid for 90 days
+ * @see https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens#token-lifetime
+ * @see https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#refresh-the-access-token
+ */
+struct AzureOAuthAccessToken {
+	// Number of seconds the included access token is valid for.
+	Azure::DateTime expires_at;
+	// Issued for the scopes that were requested.
+	std::string access_token;
+	// Issued if the original scope parameter included offline_access.
+	std::string refresh_token;
 };
 
 class AzureDeviceCodeCredentialRequester final {
@@ -72,7 +88,8 @@ private:
 class AzureDeviceCodeCredential final : public Azure::Core::Credentials::TokenCredential {
 public:
 	explicit AzureDeviceCodeCredential(std::string tenant_id, std::string client_id,
-	                                   std::unordered_set<std::string> scopes, AzureDeviceCodeInfo device_code,
+	                                   std::unordered_set<std::string> scopes,
+	                                   std::shared_ptr<AzureDeviceCodeClientContextState> device_code_context,
 	                                   const Azure::Core::Credentials::TokenCredentialOptions &options =
 	                                       Azure::Core::Credentials::TokenCredentialOptions());
 	Azure::Core::Credentials::AccessToken
@@ -80,38 +97,21 @@ public:
 	         Azure::Core::Context const &context) const override;
 
 private:
-	/**
-	 * When refresh token is set it seen to be valid for 90 days
-	 * @see https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens#token-lifetime
-	 * @see https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#refresh-the-access-token
-	 */
-	struct OAuthAccessToken {
-		// Number of seconds the included access token is valid for.
-		Azure::DateTime expires_at;
-		// Issued for the scopes that were requested.
-		std::string access_token;
-		// Issued if the original scope parameter included offline_access.
-		std::string refresh_token;
-	};
-
-private:
-	OAuthAccessToken AuthenticatingUser() const;
-	OAuthAccessToken RefreshToken() const;
-	static bool IsFresh(const OAuthAccessToken &token, Azure::DateTime::duration minimum_expiration,
+	AzureOAuthAccessToken AuthenticatingUser(const AzureDeviceCodeInfo &device_code_info) const;
+	AzureOAuthAccessToken RefreshToken(const std::string &refresh_token) const;
+	static bool IsFresh(const AzureOAuthAccessToken &token, Azure::DateTime::duration minimum_expiration,
 	                    std::chrono::system_clock::time_point now);
-	static void ParseJson(const std::string &json_str, OAuthAccessToken *token);
+	static void ParseJson(const std::string &json_str, AzureOAuthAccessToken *token);
 
 private:
 	const std::string tenant_id;
 	const std::string client_id;
 	const std::unordered_set<std::string> scopes;
 	const std::string encoded_scopes;
-	const AzureDeviceCodeInfo device_code_info;
+
+	const std::shared_ptr<AzureDeviceCodeClientContextState> device_code_context;
 
 	Azure::Core::Http::_internal::HttpPipeline http_pipeline;
-
-	mutable std::shared_timed_mutex token_mutex;
-	mutable OAuthAccessToken token;
 };
 
 } // namespace duckdb

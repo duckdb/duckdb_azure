@@ -1,4 +1,5 @@
 #include "auth/azure_device_code_credential.hpp"
+#include "auth/azure_device_code_context.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/helper.hpp"
 #include "duckdb/common/string_util.hpp"
@@ -124,16 +125,16 @@ AzureDeviceCodeCredentialRequester::HandleDeviceAuthorizationResponse(const Azur
 	}
 }
 
-AzureDeviceCodeCredential::AzureDeviceCodeCredential(std::string tenant_id, std::string client_id,
-                                                     std::unordered_set<std::string> scopes_p,
-                                                     AzureDeviceCodeInfo device_code_info,
-                                                     const Azure::Core::Credentials::TokenCredentialOptions &options)
+AzureDeviceCodeCredential::AzureDeviceCodeCredential(
+    std::string tenant_id, std::string client_id, std::unordered_set<std::string> scopes_p,
+    std::shared_ptr<AzureDeviceCodeClientContextState> device_code_context,
+    const Azure::Core::Credentials::TokenCredentialOptions &options)
     : Azure::Core::Credentials::TokenCredential("DeviceCodeCredential"), tenant_id(std::move(tenant_id)),
       client_id(std::move(client_id)), scopes(std::move(scopes_p)), encoded_scopes(EncodeScopes(scopes)),
-      device_code_info(std::move(device_code_info)), http_pipeline(options, "identity", "DuckDB", {}, {}) {
+      device_code_context(std::move(device_code_context)), http_pipeline(options, "identity", "DuckDB", {}, {}) {
 }
 
-AzureDeviceCodeCredential::OAuthAccessToken AzureDeviceCodeCredential::AuthenticatingUser() const {
+AzureOAuthAccessToken AzureDeviceCodeCredential::AuthenticatingUser(const AzureDeviceCodeInfo &device_code_info) const {
 	// Check if it still possible to retrieve a token!
 	auto now = std::chrono::system_clock::now();
 	if (now >= device_code_info.expires_at) {
@@ -163,7 +164,7 @@ AzureDeviceCodeCredential::OAuthAccessToken AzureDeviceCodeCredential::Authentic
 		const auto response_code = response->GetStatusCode();
 		switch (response_code) {
 		case Azure::Core::Http::HttpStatusCode::Ok: {
-			OAuthAccessToken token;
+			AzureOAuthAccessToken token;
 			ParseJson(response_body_str, &token);
 			return token;
 		} break;
@@ -195,13 +196,13 @@ AzureDeviceCodeCredential::OAuthAccessToken AzureDeviceCodeCredential::Authentic
 	}
 }
 
-AzureDeviceCodeCredential::OAuthAccessToken AzureDeviceCodeCredential::RefreshToken() const {
+AzureOAuthAccessToken AzureDeviceCodeCredential::RefreshToken(const std::string &refresh_token) const {
 	const std::string url = Azure::Identity::_detail::AadGlobalAuthority + tenant_id + "/oauth2/v2.0/token";
 	// clang-format off
 	const std::string body = "grant_type=refresh_token"
 	                         "&client_id=" + Azure::Core::Url::Encode(client_id) +
 	                         "&scope=" + encoded_scopes +
-	                         "&refresh_token=" + token.refresh_token;
+	                         "&refresh_token=" + refresh_token;
 	// clang-format on
 	Azure::Core::IO::MemoryBodyStream body_stream(reinterpret_cast<const std::uint8_t *>(body.data()), body.size());
 
@@ -215,7 +216,7 @@ AzureDeviceCodeCredential::OAuthAccessToken AzureDeviceCodeCredential::RefreshTo
 	const auto response_body_str = std::string(response_body.begin(), response_body.end());
 	const auto response_code = response->GetStatusCode();
 	if (Azure::Core::Http::HttpStatusCode::Ok == response_code) {
-		OAuthAccessToken token;
+		AzureOAuthAccessToken token;
 		ParseJson(response_body_str, &token);
 		return token;
 	} else {
@@ -225,7 +226,7 @@ AzureDeviceCodeCredential::OAuthAccessToken AzureDeviceCodeCredential::RefreshTo
 	}
 }
 
-void AzureDeviceCodeCredential::ParseJson(const std::string &json_str, OAuthAccessToken *token) {
+void AzureDeviceCodeCredential::ParseJson(const std::string &json_str, AzureOAuthAccessToken *token) {
 	try {
 		auto json = Azure::Core::Json::_internal::json::parse(json_str);
 
@@ -245,7 +246,7 @@ void AzureDeviceCodeCredential::ParseJson(const std::string &json_str, OAuthAcce
 	}
 }
 
-bool AzureDeviceCodeCredential::IsFresh(const AzureDeviceCodeCredential::OAuthAccessToken &token,
+bool AzureDeviceCodeCredential::IsFresh(const AzureOAuthAccessToken &token,
                                         Azure::DateTime::duration minimum_expiration,
                                         std::chrono::system_clock::time_point now) {
 	return token.expires_at > (Azure::DateTime(now) + minimum_expiration);
@@ -254,7 +255,7 @@ bool AzureDeviceCodeCredential::IsFresh(const AzureDeviceCodeCredential::OAuthAc
 Azure::Core::Credentials::AccessToken
 AzureDeviceCodeCredential::GetToken(Azure::Core::Credentials::TokenRequestContext const &token_request_context,
                                     Azure::Core::Context const &context) const {
-	if (device_code_info.device_code.empty()) {
+	if (device_code_context->device_code_info.device_code.empty()) {
 		throw IOException("[AzureDeviceCodeCredential] No device/user code register did you call `SELECT * FROM "
 		                  "azure_devicecode('<secret name>')`;");
 	}
@@ -274,7 +275,8 @@ AzureDeviceCodeCredential::GetToken(Azure::Core::Credentials::TokenRequestContex
 	}
 
 	{
-		std::shared_lock<std::shared_timed_mutex> read_lock(token_mutex);
+		std::shared_lock<AzureDeviceCodeClientContextState> read_lock(*device_code_context);
+		auto &token = device_code_context->cache_token;
 		if (!token.access_token.empty() &&
 		    IsFresh(token, token_request_context.MinimumExpiration, std::chrono::system_clock::now())) {
 			return Azure::Core::Credentials::AccessToken {token.access_token, token.expires_at};
@@ -282,16 +284,17 @@ AzureDeviceCodeCredential::GetToken(Azure::Core::Credentials::TokenRequestContex
 	}
 
 	{
-		std::unique_lock<std::shared_timed_mutex> write_lock(token_mutex);
+		std::unique_lock<AzureDeviceCodeClientContextState> write_lock(*device_code_context);
+		auto &token = device_code_context->cache_token;
 		if (!token.access_token.empty() &&
 		    IsFresh(token, token_request_context.MinimumExpiration, std::chrono::system_clock::now())) {
 			return Azure::Core::Credentials::AccessToken {token.access_token, token.expires_at};
 		}
 
 		if (token.refresh_token.empty()) {
-			token = AuthenticatingUser();
+			token = AuthenticatingUser(device_code_context->device_code_info);
 		} else {
-			token = RefreshToken();
+			token = RefreshToken(token.refresh_token);
 		}
 		return Azure::Core::Credentials::AccessToken {token.access_token, token.expires_at};
 	}
