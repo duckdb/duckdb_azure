@@ -1,9 +1,4 @@
 {
-  "vcpkg-configuration": {
-    "overlay-ports": [
-      "./vcpkg_ports"
-    ]
-  },
   "dependencies": [
     "azure-identity-cpp",
     "azure-storage-blobs-cpp",
