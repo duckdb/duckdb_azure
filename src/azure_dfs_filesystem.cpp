@@ -83,21 +83,20 @@ AzureDfsContextState::GetDfsFileSystemClient(const std::string &file_system_name
 }
 
 //////// AzureDfsContextState ////////
-AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, string path, uint8_t flags,
+AzureDfsStorageFileHandle::AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, string path, FileOpenFlags flags,
                                                      const AzureReadOptions &read_options,
                                                      Azure::Storage::Files::DataLake::DataLakeFileClient client)
     : AzureFileHandle(fs, std::move(path), flags, read_options), file_client(std::move(client)) {
 }
 
 //////// AzureDfsStorageFileSystem ////////
-unique_ptr<AzureFileHandle> AzureDfsStorageFileSystem::CreateHandle(const string &path, uint8_t flags,
-                                                                    FileLockType lock, FileCompressionType compression,
-                                                                    FileOpener *opener) {
+unique_ptr<AzureFileHandle> AzureDfsStorageFileSystem::CreateHandle(const string &path, FileOpenFlags flags,
+                                                                    optional_ptr<FileOpener> opener) {
 	if (opener == nullptr) {
 		throw InternalException("Cannot do Azure storage CreateHandle without FileOpener");
 	}
 
-	D_ASSERT(compression == FileCompressionType::UNCOMPRESSED);
+	D_ASSERT(flags.Compression() == FileCompressionType::UNCOMPRESSED);
 
 	auto parsed_url = ParseUrl(path);
 	auto storage_context = GetOrCreateStorageContext(opener, path, parsed_url);
@@ -186,7 +185,7 @@ void AzureDfsStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_of
 	}
 }
 
-std::shared_ptr<AzureContextState> AzureDfsStorageFileSystem::CreateStorageContext(FileOpener *opener,
+std::shared_ptr<AzureContextState> AzureDfsStorageFileSystem::CreateStorageContext(optional_ptr<FileOpener> opener,
                                                                                    const string &path,
                                                                                    const AzureParsedUrl &parsed_url) {
 	auto azure_read_options = ParseAzureReadOptions(opener);

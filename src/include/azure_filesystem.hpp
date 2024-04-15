@@ -52,10 +52,10 @@ public:
 	}
 
 protected:
-	AzureFileHandle(AzureStorageFileSystem &fs, string path, uint8_t flags, const AzureReadOptions &read_options);
+	AzureFileHandle(AzureStorageFileSystem &fs, string path, FileOpenFlags flags, const AzureReadOptions &read_options);
 
 public:
-	const uint8_t flags;
+	const FileOpenFlags flags;
 
 	// File info
 	idx_t length;
@@ -76,9 +76,8 @@ public:
 class AzureStorageFileSystem : public FileSystem {
 public:
 	// FS methods
-	duckdb::unique_ptr<FileHandle> OpenFile(const string &path, uint8_t flags, FileLockType lock = DEFAULT_LOCK,
-	                                        FileCompressionType compression = DEFAULT_COMPRESSION,
-	                                        FileOpener *opener = nullptr) override;
+	duckdb::unique_ptr<FileHandle> OpenFile(const string &path, FileOpenFlags flags,
+	                                        optional_ptr<FileOpener> opener = nullptr) override;
 
 	void Read(FileHandle &handle, void *buffer, int64_t nr_bytes, idx_t location) override;
 	int64_t Read(FileHandle &handle, void *buffer, int64_t nr_bytes) override;
@@ -88,7 +87,7 @@ public:
 	bool OnDiskFile(FileHandle &handle) override {
 		return false;
 	}
-	bool IsPipe(const string &filename) override {
+	bool IsPipe(const string &filename, optional_ptr<FileOpener> opener = nullptr) override {
 		return false;
 	}
 	int64_t GetFileSize(FileHandle &handle) override;
@@ -99,18 +98,18 @@ public:
 	void LoadFileInfo(AzureFileHandle &handle);
 
 protected:
-	virtual duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, uint8_t flags, FileLockType lock,
-	                                                         FileCompressionType compression, FileOpener *opener) = 0;
+	virtual duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, FileOpenFlags flags,
+															 optional_ptr<FileOpener> opener) = 0;
 	virtual void ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len) = 0;
 
 	virtual const string &GetContextPrefix() const = 0;
-	std::shared_ptr<AzureContextState> GetOrCreateStorageContext(FileOpener *opener, const string &path,
+	std::shared_ptr<AzureContextState> GetOrCreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
 	                                                             const AzureParsedUrl &parsed_url);
-	virtual std::shared_ptr<AzureContextState> CreateStorageContext(FileOpener *opener, const string &path,
+	virtual std::shared_ptr<AzureContextState> CreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
 	                                                                const AzureParsedUrl &parsed_url) = 0;
 
 	virtual void LoadRemoteFileInfo(AzureFileHandle &handle) = 0;
-	static AzureReadOptions ParseAzureReadOptions(FileOpener *opener);
+	static AzureReadOptions ParseAzureReadOptions(optional_ptr<FileOpener> opener);
 	static time_t ToTimeT(const Azure::DateTime &dt);
 };
 
