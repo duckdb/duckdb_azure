@@ -23,7 +23,7 @@ class AzureBlobStorageFileSystem;
 
 class AzureBlobStorageFileHandle : public AzureFileHandle {
 public:
-	AzureBlobStorageFileHandle(AzureBlobStorageFileSystem &fs, string path, uint8_t flags,
+	AzureBlobStorageFileHandle(AzureBlobStorageFileSystem &fs, string path, FileOpenFlags flags,
 	                           const AzureReadOptions &read_options, Azure::Storage::Blobs::BlobClient blob_client);
 	~AzureBlobStorageFileHandle() override = default;
 
@@ -36,7 +36,7 @@ public:
 	vector<string> Glob(const string &path, FileOpener *opener = nullptr) override;
 
 	// FS methods
-	bool FileExists(const string &filename) override;
+	bool FileExists(const string &filename, optional_ptr<FileOpener> opener = nullptr) override;
 	bool CanHandleFile(const string &fpath) override;
 	string GetName() const override {
 		return "AzureBlobStorageFileSystem";
@@ -57,10 +57,10 @@ protected:
 	const string &GetContextPrefix() const override {
 		return PATH_PREFIX;
 	}
-	std::shared_ptr<AzureContextState> CreateStorageContext(FileOpener *opener, const string &path,
+	std::shared_ptr<AzureContextState> CreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
 	                                                        const AzureParsedUrl &parsed_url) override;
-	duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, uint8_t flags, FileLockType lock,
-	                                                 FileCompressionType compression, FileOpener *opener) override;
+	duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, FileOpenFlags flags,
+													 optional_ptr<FileOpener> opener) override;
 
 	void ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len) override;
 };

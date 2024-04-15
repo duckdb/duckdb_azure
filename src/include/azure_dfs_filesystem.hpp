@@ -25,7 +25,7 @@ class AzureDfsStorageFileSystem;
 
 class AzureDfsStorageFileHandle : public AzureFileHandle {
 public:
-	AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, string path, uint8_t flags,
+	AzureDfsStorageFileHandle(AzureDfsStorageFileSystem &fs, string path, FileOpenFlags flags,
 	                          const AzureReadOptions &read_options,
 	                          Azure::Storage::Files::DataLake::DataLakeFileClient client);
 	~AzureDfsStorageFileHandle() override = default;
@@ -55,10 +55,10 @@ protected:
 	const string &GetContextPrefix() const override {
 		return PATH_PREFIX;
 	}
-	std::shared_ptr<AzureContextState> CreateStorageContext(FileOpener *opener, const string &path,
+	std::shared_ptr<AzureContextState> CreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
 	                                                        const AzureParsedUrl &parsed_url) override;
-	duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, uint8_t flags, FileLockType lock,
-	                                                 FileCompressionType compression, FileOpener *opener) override;
+	duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, FileOpenFlags flags,
+													 optional_ptr<FileOpener> opener) override;
 
 	void ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len) override;
 };
