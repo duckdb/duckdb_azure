@@ -1,5 +1,6 @@
 #include "http_state_policy.hpp"
 #include <azure/core/http/http.hpp>
+#include "duckdb/common/shared_ptr.hpp"
 #include <memory>
 #include <string>
 #include <utility>
@@ -8,7 +9,7 @@ const static std::string CONTENT_LENGTH = "content-length";
 
 namespace duckdb {
 
-HttpStatePolicy::HttpStatePolicy(std::shared_ptr<HTTPState> http_state) : http_state(std::move(http_state)) {
+HttpStatePolicy::HttpStatePolicy(shared_ptr<HTTPState> http_state) : http_state(std::move(http_state)) {
 }
 
 std::unique_ptr<Azure::Core::Http::RawResponse>
@@ -34,12 +35,12 @@ HttpStatePolicy::Send(Azure::Core::Http::Request &request, Azure::Core::Http::Po
 	}
 
 	const auto *body_stream = request.GetBodyStream();
-	if (nullptr != body_stream) {
+	if (body_stream != nullptr) {
 		http_state->total_bytes_sent += body_stream->Length();
 	}
 
 	auto result = next_policy.Send(request, context);
-	if (nullptr != result) {
+	if (result != nullptr) {
 		const auto &response_body = result->GetBody();
 		if (response_body.size() != 0) {
 			http_state->total_bytes_received += response_body.size();

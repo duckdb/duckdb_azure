@@ -1,5 +1,6 @@
 #include "azure_filesystem.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/main/client_context.hpp"
 #include <azure/storage/common/storage_exception.hpp>
@@ -53,8 +54,8 @@ void AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
 	}
 }
 
-unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path,FileOpenFlags flags,
-														optional_ptr<FileOpener> opener) {
+unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, FileOpenFlags flags,
+                                                        optional_ptr<FileOpener> opener) {
 	D_ASSERT(flags.Compression() == FileCompressionType::UNCOMPRESSED);
 
 	if (flags.OpenForWriting()) {
@@ -153,16 +154,16 @@ int64_t AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t n
 	return nr_bytes;
 }
 
-std::shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(optional_ptr<FileOpener> opener,
-                                                                                     const string &path,
-                                                                                     const AzureParsedUrl &parsed_url) {
+shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(optional_ptr<FileOpener> opener,
+                                                                                const string &path,
+                                                                                const AzureParsedUrl &parsed_url) {
 	Value value;
 	bool azure_context_caching = true;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_context_caching", value)) {
 		azure_context_caching = value.GetValue<bool>();
 	}
 
-	std::shared_ptr<AzureContextState> result;
+	shared_ptr<AzureContextState> result;
 	if (azure_context_caching) {
 		auto client_context = FileOpener::TryGetClientContext(opener);
 
@@ -182,7 +183,7 @@ std::shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageCon
 				result = CreateStorageContext(opener, path, parsed_url);
 				registered_state[context_key] = result;
 			} else {
-				result = std::shared_ptr<AzureContextState>(storage_account_it->second, azure_context_state);
+				result = shared_ptr<AzureContextState>(storage_account_it->second, azure_context_state);
 			}
 		}
 	} else {

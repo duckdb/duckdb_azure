@@ -2,6 +2,8 @@
 
 #include "azure_filesystem.hpp"
 #include "duckdb/common/file_opener.hpp"
+#include "duckdb/common/shared_ptr.hpp"
+#include "duckdb/common/unique_ptr.hpp"
 #include <azure/storage/files/datalake/datalake_file_client.hpp>
 #include <azure/storage/files/datalake/datalake_file_system_client.hpp>
 #include <azure/storage/files/datalake/datalake_service_client.hpp>
@@ -55,10 +57,10 @@ protected:
 	const string &GetContextPrefix() const override {
 		return PATH_PREFIX;
 	}
-	std::shared_ptr<AzureContextState> CreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
-	                                                        const AzureParsedUrl &parsed_url) override;
-	duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, FileOpenFlags flags,
-													 optional_ptr<FileOpener> opener) override;
+	shared_ptr<AzureContextState> CreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
+	                                                   const AzureParsedUrl &parsed_url) override;
+	unique_ptr<AzureFileHandle> CreateHandle(const string &path, FileOpenFlags flags,
+	                                         optional_ptr<FileOpener> opener) override;
 
 	void ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len) override;
 };
