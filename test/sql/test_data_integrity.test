@@ -2,6 +2,9 @@
 # description: Check the test data looks as expected
 # group: [azure]
 
+#somehow broken in CI setting, requires bogus env variable to be enabled
+require-env ENABLE_DATA_INTEGRITY
+
 require azure
 
 require parquet

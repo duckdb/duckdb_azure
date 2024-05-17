@@ -3,6 +3,8 @@
 #include "azure_storage_account_client.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/helper.hpp"
+#include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/http_state.hpp"
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/string_util.hpp"
@@ -201,13 +203,13 @@ void AzureBlobStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_o
 	}
 }
 
-std::shared_ptr<AzureContextState> AzureBlobStorageFileSystem::CreateStorageContext(optional_ptr<FileOpener> opener,
-                                                                                    const string &path,
-                                                                                    const AzureParsedUrl &parsed_url) {
+shared_ptr<AzureContextState> AzureBlobStorageFileSystem::CreateStorageContext(optional_ptr<FileOpener> opener,
+                                                                               const string &path,
+                                                                               const AzureParsedUrl &parsed_url) {
 	auto azure_read_options = ParseAzureReadOptions(opener);
 
-	return std::make_shared<AzureBlobContextState>(ConnectToBlobStorageAccount(opener, path, parsed_url),
-	                                               azure_read_options);
+	return make_shared_ptr<AzureBlobContextState>(ConnectToBlobStorageAccount(opener, path, parsed_url),
+	                                              azure_read_options);
 }
 
 } // namespace duckdb

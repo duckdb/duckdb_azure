@@ -3,6 +3,8 @@
 #include "duckdb/catalog/catalog_transaction.hpp"
 #include "duckdb/common/enums/statement_type.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/shared_ptr.hpp"
+#include "duckdb/common/helper.hpp"
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/main/client_context.hpp"
@@ -75,12 +77,12 @@ static std::string AccountUrl(const AzureParsedUrl &azure_parsed_url) {
 
 template <typename T>
 static T ToClientOptions(const Azure::Core::Http::Policies::TransportOptions &transport_options,
-                         std::shared_ptr<HTTPState> http_state) {
+                         shared_ptr<HTTPState> http_state) {
 	static_assert(std::is_base_of<Azure::Core::_internal::ClientOptions, T>::value,
 	              "type parameter must be an Azure ClientOptions");
 	T options;
 	options.Transport = transport_options;
-	if (nullptr != http_state) {
+	if (http_state != nullptr) {
 		// Because we mainly want to have stats on what has been needed and not on
 		// what has been used on the network, we register the policy on `PerOperationPolicies`
 		// part and not the `PerRetryPolicies`. Network issues will result in retry that can
@@ -92,13 +94,13 @@ static T ToClientOptions(const Azure::Core::Http::Policies::TransportOptions &tr
 
 static Azure::Storage::Blobs::BlobClientOptions
 ToBlobClientOptions(const Azure::Core::Http::Policies::TransportOptions &transport_options,
-                    std::shared_ptr<HTTPState> http_state) {
+                    shared_ptr<HTTPState> http_state) {
 	return ToClientOptions<Azure::Storage::Blobs::BlobClientOptions>(transport_options, std::move(http_state));
 }
 
 static Azure::Storage::Files::DataLake::DataLakeClientOptions
 ToDfsClientOptions(const Azure::Core::Http::Policies::TransportOptions &transport_options,
-                   std::shared_ptr<HTTPState> http_state) {
+                   shared_ptr<HTTPState> http_state) {
 	return ToClientOptions<Azure::Storage::Files::DataLake::DataLakeClientOptions>(transport_options,
 	                                                                               std::move(http_state));
 }
@@ -110,14 +112,14 @@ ToTokenCredentialOptions(const Azure::Core::Http::Policies::TransportOptions &tr
 	return options;
 }
 
-static std::shared_ptr<HTTPState> GetHttpState(optional_ptr<FileOpener> opener) {
+static shared_ptr<HTTPState> GetHttpState(optional_ptr<FileOpener> opener) {
 	Value value;
 	bool enable_http_stats = false;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_http_stats", value)) {
 		enable_http_stats = value.GetValue<bool>();
 	}
 
-	std::shared_ptr<HTTPState> http_state;
+	shared_ptr<HTTPState> http_state;
 	if (enable_http_stats) {
 		http_state = HTTPState::TryGetState(opener);
 	}
@@ -168,7 +170,7 @@ CreateClientCredential(const std::string &tenant_id, const std::string &client_i
 	auto credential_options = ToTokenCredentialOptions(transport_options);
 	if (!client_secret.empty()) {
 		return std::make_shared<Azure::Identity::ClientSecretCredential>(tenant_id, client_id, client_secret,
-		                                                                 credential_options);
+		                                                                credential_options);
 	} else if (!client_certificate_path.empty()) {
 		return std::make_shared<Azure::Identity::ClientCertificateCredential>(
 		    tenant_id, client_id, client_certificate_path, credential_options);
@@ -408,8 +410,9 @@ GetDfsStorageAccountClientFromServicePrincipalProvider(optional_ptr<FileOpener> 
 	return Azure::Storage::Files::DataLake::DataLakeServiceClient(account_url, token_credential, dfs_options);
 }
 
-static Azure::Storage::Blobs::BlobServiceClient
-GetBlobStorageAccountClient(optional_ptr<FileOpener> opener, const KeyValueSecret &secret, const AzureParsedUrl &azure_parsed_url) {
+static Azure::Storage::Blobs::BlobServiceClient GetBlobStorageAccountClient(optional_ptr<FileOpener> opener,
+                                                                            const KeyValueSecret &secret,
+                                                                            const AzureParsedUrl &azure_parsed_url) {
 	auto &provider = secret.GetProvider();
 	// default provider
 	if (provider == "config") {
@@ -424,7 +427,8 @@ GetBlobStorageAccountClient(optional_ptr<FileOpener> opener, const KeyValueSecre
 }
 
 static Azure::Storage::Files::DataLake::DataLakeServiceClient
-GetDfsStorageAccountClient(optional_ptr<FileOpener> opener, const KeyValueSecret &secret, const AzureParsedUrl &azure_parsed_url) {
+GetDfsStorageAccountClient(optional_ptr<FileOpener> opener, const KeyValueSecret &secret,
+                           const AzureParsedUrl &azure_parsed_url) {
 	auto &provider = secret.GetProvider();
 	// default provider
 	if (provider == "config") {
@@ -505,7 +509,8 @@ const SecretMatch LookupSecret(optional_ptr<FileOpener> opener, const std::strin
 	return {};
 }
 
-Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(optional_ptr<FileOpener> opener, const std::string &path,
+Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(optional_ptr<FileOpener> opener,
+                                                                     const std::string &path,
                                                                      const AzureParsedUrl &azure_parsed_url) {
 
 	auto secret_match = LookupSecret(opener, path);
@@ -519,7 +524,8 @@ Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(optional_pt
 }
 
 Azure::Storage::Files::DataLake::DataLakeServiceClient
-ConnectToDfsStorageAccount(optional_ptr<FileOpener> opener, const std::string &path, const AzureParsedUrl &azure_parsed_url) {
+ConnectToDfsStorageAccount(optional_ptr<FileOpener> opener, const std::string &path,
+                           const AzureParsedUrl &azure_parsed_url) {
 	auto secret_match = LookupSecret(opener, path);
 	if (secret_match.HasMatch()) {
 		const auto &base_secret = secret_match.GetSecret();

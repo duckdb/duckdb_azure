@@ -1,6 +1,8 @@
 #include "azure_dfs_filesystem.hpp"
 #include "azure_storage_account_client.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/helper.hpp"
+#include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/function/scalar/string_functions.hpp"
 #include <algorithm>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -185,13 +187,13 @@ void AzureDfsStorageFileSystem::ReadRange(AzureFileHandle &handle, idx_t file_of
 	}
 }
 
-std::shared_ptr<AzureContextState> AzureDfsStorageFileSystem::CreateStorageContext(optional_ptr<FileOpener> opener,
-                                                                                   const string &path,
-                                                                                   const AzureParsedUrl &parsed_url) {
+shared_ptr<AzureContextState> AzureDfsStorageFileSystem::CreateStorageContext(optional_ptr<FileOpener> opener,
+                                                                              const string &path,
+                                                                              const AzureParsedUrl &parsed_url) {
 	auto azure_read_options = ParseAzureReadOptions(opener);
 
-	return std::make_shared<AzureDfsContextState>(ConnectToDfsStorageAccount(opener, path, parsed_url),
-	                                              azure_read_options);
+	return make_shared_ptr<AzureDfsContextState>(ConnectToDfsStorageAccount(opener, path, parsed_url),
+	                                             azure_read_options);
 }
 
 } // namespace duckdb

@@ -3,6 +3,7 @@
 #include "azure_parsed_url.hpp"
 #include "duckdb/common/assert.hpp"
 #include "duckdb/common/file_opener.hpp"
+#include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/main/client_context_state.hpp"
 #include <azure/core/datetime.hpp>
@@ -99,14 +100,14 @@ public:
 
 protected:
 	virtual duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, FileOpenFlags flags,
-															 optional_ptr<FileOpener> opener) = 0;
+	                                                         optional_ptr<FileOpener> opener) = 0;
 	virtual void ReadRange(AzureFileHandle &handle, idx_t file_offset, char *buffer_out, idx_t buffer_out_len) = 0;
 
 	virtual const string &GetContextPrefix() const = 0;
-	std::shared_ptr<AzureContextState> GetOrCreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
-	                                                             const AzureParsedUrl &parsed_url);
-	virtual std::shared_ptr<AzureContextState> CreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
-	                                                                const AzureParsedUrl &parsed_url) = 0;
+	shared_ptr<AzureContextState> GetOrCreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
+	                                                        const AzureParsedUrl &parsed_url);
+	virtual shared_ptr<AzureContextState> CreateStorageContext(optional_ptr<FileOpener> opener, const string &path,
+	                                                           const AzureParsedUrl &parsed_url) = 0;
 
 	virtual void LoadRemoteFileInfo(AzureFileHandle &handle) = 0;
 	static AzureReadOptions ParseAzureReadOptions(optional_ptr<FileOpener> opener);
