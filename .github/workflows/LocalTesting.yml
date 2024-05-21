@@ -89,7 +89,6 @@ jobs:
       VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
       AZURE_STORAGE_CONNECTION_STRING: 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;'
       AZURE_STORAGE_ACCOUNT: devstoreaccount1
-      HTTP_PROXY_RUNNING: '1'
 
     steps:
       - uses: actions/checkout@v3
@@ -123,10 +122,7 @@ jobs:
       - uses: actions/setup-node@v3
       - name: Launch & populate Azure test service
         run: |
-          brew install squid
           npm install -g azurite
-          ./scripts/run_squid.sh --port 3128 --log_dir squid_logs &
-          ./scripts/run_squid.sh --port 3129 --log_dir squid_auth_logs --auth &
           azurite > azurite_log.txt 2>&1 &
           sleep 10
           ./scripts/upload_test_files_to_azurite.sh
@@ -147,12 +143,6 @@ jobs:
         run: |
           echo "## azurite"
           cat azurite_log.txt
-          
-          echo "## squid"
-          cat squid_logs/*
-
-          echo "## squid with auth"
-          cat squid_auth_logs/*
 
   azurite-tests-windows:
     name: Azurite tests (Windows)
