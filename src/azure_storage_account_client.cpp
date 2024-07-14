@@ -205,9 +205,9 @@ public:
 	}
 
 	Azure::Core::Credentials::AccessToken GetToken(
-	    Azure::Core::Credentials::TokenRequestContext const& tokenRequestContext,
-	    Azure::Core::Context const& context) const override {
-	    return access_token;
+		Azure::Core::Credentials::TokenRequestContext const& tokenRequestContext,
+		Azure::Core::Context const& context) const override {
+		return access_token;
 	};
 
 private:
@@ -581,7 +581,6 @@ Azure::Storage::Blobs::BlobServiceClient ConnectToBlobStorageAccount(optional_pt
 }
 
 Azure::Storage::Files::DataLake::DataLakeServiceClient
-
 ConnectToDfsStorageAccount(optional_ptr<FileOpener> opener, const std::string &path,
                            const AzureParsedUrl &azure_parsed_url) {
 	auto secret_match = LookupSecret(opener, path);

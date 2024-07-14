@@ -2,16 +2,14 @@
 
 This extension adds a filesystem abstraction for Azure blob storage to DuckDB. To use it, install latest DuckDB. The extension currently supports only **reads** and **globs**.
 
-> BUGBUG: recommend cred chain, mention alternatives connection_string + access_token + service_principal
-
-The easiest way to get started is by using a connection string to create a DuckDB secret:
+Setup authentication (leverages either Azure CLI or Managed Identity):
 ```sql
-CREATE SECRET (
+CREATE SECRET secret1 (
     TYPE AZURE,
-    CONNECTION_STRING '<value>'
+    PROVIDER CREDENTIAL_CHAIN,
+    ACCOUNT_NAME '⟨storage account name⟩'
 );
 ```
-Alternatively, you can let the azure extension automatically fetch your azure credentials, check out the [docs](https://duckdb.org/docs/extensions/azure#credential_chain-provider) on how to do that.
 
 Then to query a file on azure:
 ```sql
@@ -21,6 +19,43 @@ SELECT count(*) FROM 'azure://<my_container>/<my_file>.<parquet_or_csv>';
 Globbing is also supported:
 ```sql
 SELECT count(*) FROM 'azure://dummy_container/*.csv';
+```
+
+Other authentication options available:
+- Connection string
+```sql
+CREATE SECRET secret2 (
+    TYPE AZURE,
+    CONNECTION_STRING '<value>'
+);
+```
+- Service Principal (replace `CLIENT_SECRET` with `CLIENT_CERTIFICATE_PATH` to use a client certificate)
+```sql
+CREATE SECRET azure3 (
+    TYPE AZURE,
+    PROVIDER SERVICE_PRINCIPAL,
+    TENANT_ID '⟨tenant id⟩',
+    CLIENT_ID '⟨client id⟩',
+    CLIENT_SECRET '⟨client secret⟩',
+    ACCOUNT_NAME '⟨storage account name⟩'
+);
+```
+- Access token (its audience needs to be `https://storage.azure.com`)
+```sql
+CREATE SECRET secret4 (
+    TYPE AZURE,
+    PROVIDER ACCESS_TOKEN,
+    ACCESS_TOKEN '<value>'
+    ACCOUNT_NAME '⟨storage account name⟩'
+);
+```
+- Unauthenticated
+```sql
+CREATE SECRET secret5 (
+    TYPE AZURE,
+    PROVIDER CONFIG,
+    ACCOUNT_NAME '⟨storage account name⟩'
+);
 ```
 
 ## Supported architectures
