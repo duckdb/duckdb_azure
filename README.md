@@ -49,7 +49,7 @@ CREATE SECRET secret4 (
     ACCOUNT_NAME '⟨storage account name⟩'
 );
 ```
-- Unauthenticated
+- Anonymous
 ```sql
 CREATE SECRET secret5 (
     TYPE AZURE,
