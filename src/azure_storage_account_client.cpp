@@ -439,7 +439,7 @@ GetDfsStorageAccountClientFromServicePrincipalProvider(optional_ptr<FileOpener> 
 
 static Azure::Storage::Blobs::BlobServiceClient
 GetBlobStorageAccountClientFromAccessTokenProvider(optional_ptr<FileOpener> opener, const KeyValueSecret &secret,
-                                                        const AzureParsedUrl &azure_parsed_url) {
+                                                   const AzureParsedUrl &azure_parsed_url) {
 	auto transport_options = GetTransportOptions(opener, secret);
 	auto token_credential = CreateAccessTokenCredential(secret);
 
