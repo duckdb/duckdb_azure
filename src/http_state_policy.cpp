@@ -9,7 +9,7 @@ const static std::string CONTENT_LENGTH = "content-length";
 
 namespace duckdb {
 
-HttpStatePolicy::HttpStatePolicy(shared_ptr<HTTPState> http_state) : http_state(std::move(http_state)) {
+HttpStatePolicy::HttpStatePolicy(shared_ptr<AzureHTTPState> http_state) : http_state(std::move(http_state)) {
 }
 
 std::unique_ptr<Azure::Core::Http::RawResponse>

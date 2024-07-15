@@ -77,7 +77,7 @@ static std::string AccountUrl(const AzureParsedUrl &azure_parsed_url) {
 
 template <typename T>
 static T ToClientOptions(const Azure::Core::Http::Policies::TransportOptions &transport_options,
-                         shared_ptr<HTTPState> http_state) {
+                         shared_ptr<AzureHTTPState> http_state) {
 	static_assert(std::is_base_of<Azure::Core::_internal::ClientOptions, T>::value,
 	              "type parameter must be an Azure ClientOptions");
 	T options;
@@ -94,13 +94,13 @@ static T ToClientOptions(const Azure::Core::Http::Policies::TransportOptions &tr
 
 static Azure::Storage::Blobs::BlobClientOptions
 ToBlobClientOptions(const Azure::Core::Http::Policies::TransportOptions &transport_options,
-                    shared_ptr<HTTPState> http_state) {
+                    shared_ptr<AzureHTTPState> http_state) {
 	return ToClientOptions<Azure::Storage::Blobs::BlobClientOptions>(transport_options, std::move(http_state));
 }
 
 static Azure::Storage::Files::DataLake::DataLakeClientOptions
 ToDfsClientOptions(const Azure::Core::Http::Policies::TransportOptions &transport_options,
-                   shared_ptr<HTTPState> http_state) {
+                   shared_ptr<AzureHTTPState> http_state) {
 	return ToClientOptions<Azure::Storage::Files::DataLake::DataLakeClientOptions>(transport_options,
 	                                                                               std::move(http_state));
 }
@@ -112,16 +112,16 @@ ToTokenCredentialOptions(const Azure::Core::Http::Policies::TransportOptions &tr
 	return options;
 }
 
-static shared_ptr<HTTPState> GetHttpState(optional_ptr<FileOpener> opener) {
+static shared_ptr<AzureHTTPState> GetHttpState(optional_ptr<FileOpener> opener) {
 	Value value;
 	bool enable_http_stats = false;
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_http_stats", value)) {
 		enable_http_stats = value.GetValue<bool>();
 	}
 
-	shared_ptr<HTTPState> http_state;
+	shared_ptr<AzureHTTPState> http_state;
 	if (enable_http_stats) {
-		http_state = HTTPState::TryGetState(opener);
+		http_state = AzureHTTPState::TryGetState(opener);
 	}
 
 	return http_state;

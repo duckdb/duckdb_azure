@@ -5,7 +5,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/helper.hpp"
 #include "duckdb/common/shared_ptr.hpp"
-#include "duckdb/common/http_state.hpp"
+#include "azure_http_state.hpp"
 #include "duckdb/common/file_opener.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/main/secret/secret.hpp"
