@@ -108,6 +108,31 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContex
 	return std::move(result);
 }
 
+static unique_ptr<BaseSecret> CreateAzureSecretFromAccessToken(ClientContext &context, CreateSecretInput &input) {
+	auto scope = input.scope;
+	if (scope.empty()) {
+		scope.push_back("azure://");
+		scope.push_back("az://");
+		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
+	}
+
+	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
+
+	// Manage common option that all secret type share
+	for (const auto *key : COMMON_OPTIONS) {
+		CopySecret(key, input, *result);
+	}
+
+	// Manage specific secret option
+	CopySecret("access_token", input, *result);
+
+	// Redact sensible keys
+	RedactCommonKeys(*result);
+	result->redact_keys.insert("access_token");
+
+	return std::move(result);
+}
+
 static void RegisterCommonSecretParameters(CreateSecretFunction &function) {
 	// Register azure common parameters
 	function.named_parameters["account_name"] = LogicalType::VARCHAR;
@@ -141,6 +166,7 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	RegisterCommonSecretParameters(cred_chain_function);
 	ExtensionUtil::RegisterFunction(instance, cred_chain_function);
 
+	// Register the service_principal secret provider
 	CreateSecretFunction service_principal_function = {type, "service_principal",
 	                                                   CreateAzureSecretFromServicePrincipal};
 	service_principal_function.named_parameters["tenant_id"] = LogicalType::VARCHAR;
@@ -149,6 +175,12 @@ void CreateAzureSecretFunctions::Register(DatabaseInstance &instance) {
 	service_principal_function.named_parameters["client_certificate_path"] = LogicalType::VARCHAR;
 	RegisterCommonSecretParameters(service_principal_function);
 	ExtensionUtil::RegisterFunction(instance, service_principal_function);
+
+	// Register the access_token secret provider
+	CreateSecretFunction access_token_function = {type, "access_token", CreateAzureSecretFromAccessToken};
+	access_token_function.named_parameters["access_token"] = LogicalType::VARCHAR;
+	RegisterCommonSecretParameters(access_token_function);
+	ExtensionUtil::RegisterFunction(instance, access_token_function);
 }
 
 } // namespace duckdb

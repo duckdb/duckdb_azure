@@ -1,14 +1,15 @@
 # DuckDB Azure Extension
+
 This extension adds a filesystem abstraction for Azure blob storage to DuckDB. To use it, install latest DuckDB. The extension currently supports only **reads** and **globs**.
 
-The easiest way to get started is by using a connection string to create a DuckDB secret:
+Setup authentication (leverages either Azure CLI or Managed Identity):
 ```sql
-CREATE SECRET (
+CREATE SECRET secret1 (
     TYPE AZURE,
-    CONNECTION_STRING '<value>'
+    PROVIDER CREDENTIAL_CHAIN,
+    ACCOUNT_NAME '⟨storage account name⟩'
 );
 ```
-Alternatively, you can let the azure extension automatically fetch your azure credentials, check out the [docs](https://duckdb.org/docs/extensions/azure#credential_chain-provider) on how to do that.
 
 Then to query a file on azure:
 ```sql
@@ -20,7 +21,45 @@ Globbing is also supported:
 SELECT count(*) FROM 'azure://dummy_container/*.csv';
 ```
 
+Other authentication options available:
+- Connection string
+```sql
+CREATE SECRET secret2 (
+    TYPE AZURE,
+    CONNECTION_STRING '<value>'
+);
+```
+- Service Principal (replace `CLIENT_SECRET` with `CLIENT_CERTIFICATE_PATH` to use a client certificate)
+```sql
+CREATE SECRET azure3 (
+    TYPE AZURE,
+    PROVIDER SERVICE_PRINCIPAL,
+    TENANT_ID '⟨tenant id⟩',
+    CLIENT_ID '⟨client id⟩',
+    CLIENT_SECRET '⟨client secret⟩',
+    ACCOUNT_NAME '⟨storage account name⟩'
+);
+```
+- Access token (its audience needs to be `https://storage.azure.com`)
+```sql
+CREATE SECRET secret4 (
+    TYPE AZURE,
+    PROVIDER ACCESS_TOKEN,
+    ACCESS_TOKEN '<value>'
+    ACCOUNT_NAME '⟨storage account name⟩'
+);
+```
+- Anonymous
+```sql
+CREATE SECRET secret5 (
+    TYPE AZURE,
+    PROVIDER CONFIG,
+    ACCOUNT_NAME '⟨storage account name⟩'
+);
+```
+
 ## Supported architectures
+
 The extension is tested & distributed for Linux (x64, arm64), MacOS (x64, arm64) and Windows (x64)
 
 ## Documentation
@@ -30,10 +69,16 @@ See the [Azure page in the DuckDB documentation](https://duckdb.org/docs/extensi
 Check out the tests in `test/sql` for more examples.
 
 ## Building
-This extension depends on the Azure c++ sdk. To build it, either install that manually, or use vcpkg
-to do dependency management. To install vcpkg check out the docs [here](https://vcpkg.io/en/getting-started.html).
-Then to build this extension run:
+
+For development, this extension requires [CMake](https://cmake.org), Python3, a `C++11` compliant compiler, and the Azure C++ SDK. Run `make` in the root directory to compile the sources. Run `make debug` to build a non-optimized debug version. Run `make test` to verify that your version works properly after making changes. Install the Azure C++ SDK using [vcpkg](https://vcpkg.io/en/getting-started.html) and set the `VCPKG_TOOLCHAIN_PATH` environment variable when building.
 
 ```shell
-VCPKG_TOOLCHAIN_PATH=<path_to_your_vcpkg_toolchain> make
+sudo apt-get update && sudo apt-get install -y git g++ cmake ninja-build libssl-dev
+git clone --recursive https://github.com/duckdb/duckdb_azure
+git clone https://github.com/microsoft/vcpkg
+./vcpkg/bootstrap-vcpkg.sh
+cd duckdb_azure
+GEN=ninja VCPKG_TOOLCHAIN_PATH=$PWD/../vcpkg/scripts/buildsystems/vcpkg.cmake make
 ```
+
+Please also refer to our [Build Guide](https://duckdb.org/dev/building) and [Contribution Guide]([CONTRIBUTING.md](https://github.com/duckdb/duckdb/blob/main/CONTRIBUTING.md)).
