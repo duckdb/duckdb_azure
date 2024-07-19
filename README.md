@@ -2,6 +2,7 @@
 
 This extension adds a filesystem abstraction for Azure blob storage to DuckDB. To use it, install latest DuckDB. The extension currently supports only **reads** and **globs**.
 
+## Basics
 Setup authentication (leverages either Azure CLI or Managed Identity):
 ```sql
 CREATE SECRET secret1 (
@@ -13,23 +14,25 @@ CREATE SECRET secret1 (
 
 Then to query a file on azure:
 ```sql
-SELECT count(*) FROM 'azure://<my_container>/<my_file>.<parquet_or_csv>';
+SELECT count(*) FROM 'az://<my_container>/<my_file>.<parquet_or_csv>';
 ```
 
 Globbing is also supported:
 ```sql
-SELECT count(*) FROM 'azure://dummy_container/*.csv';
+SELECT count(*) FROM 'az://dummy_container/*.csv';
 ```
 
+## Other authentication methods
 Other authentication options available:
-- Connection string
+### Connection string
 ```sql
 CREATE SECRET secret2 (
     TYPE AZURE,
     CONNECTION_STRING '<value>'
 );
 ```
-- Service Principal (replace `CLIENT_SECRET` with `CLIENT_CERTIFICATE_PATH` to use a client certificate)
+### Service Principal 
+(replace `CLIENT_SECRET` with `CLIENT_CERTIFICATE_PATH` to use a client certificate)
 ```sql
 CREATE SECRET azure3 (
     TYPE AZURE,
@@ -40,7 +43,8 @@ CREATE SECRET azure3 (
     ACCOUNT_NAME '⟨storage account name⟩'
 );
 ```
-- Access token (its audience needs to be `https://storage.azure.com`)
+###  Access token 
+(its audience needs to be `https://storage.azure.com`)
 ```sql
 CREATE SECRET secret4 (
     TYPE AZURE,
@@ -49,7 +53,7 @@ CREATE SECRET secret4 (
     ACCOUNT_NAME '⟨storage account name⟩'
 );
 ```
-- Anonymous
+###  Anonymous
 ```sql
 CREATE SECRET secret5 (
     TYPE AZURE,
