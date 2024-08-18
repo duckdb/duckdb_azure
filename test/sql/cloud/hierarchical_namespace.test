@@ -69,6 +69,12 @@ SELECT count(*) FROM 'abfss://${AZURE_STORAGE_ACCOUNT}.dfs.core.windows.net/test
 ----
 2317
 
+# Check fully qualified name abfss alternative syntax
+query I
+SELECT count(*) FROM 'abfss://testing-private@${AZURE_STORAGE_ACCOUNT}.dfs.core.windows.net/partitioned/l_receipmonth=*/l_shipmode=TRUCK/*.csv';
+----
+2317
+
 # Enable http info for the explain analyze statement
 statement ok
 SET azure_http_stats = true;
