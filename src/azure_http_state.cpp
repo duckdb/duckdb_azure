@@ -14,15 +14,7 @@ void AzureHTTPState::Reset() {
 }
 
 shared_ptr<AzureHTTPState> AzureHTTPState::TryGetState(ClientContext &context) {
-	auto lookup = context.registered_state.find("azure_http_state");
-
-	if (lookup != context.registered_state.end()) {
-		return shared_ptr_cast<ClientContextState, AzureHTTPState>(lookup->second);
-	}
-
-	auto http_state = make_shared_ptr<AzureHTTPState>();
-	context.registered_state["azure_http_state"] = http_state;
-	return http_state;
+	return context.registered_state->GetOrCreate<AzureHTTPState>("azure_http_state");
 }
 
 shared_ptr<AzureHTTPState> AzureHTTPState::TryGetState(optional_ptr<FileOpener> opener) {
