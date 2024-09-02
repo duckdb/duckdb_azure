@@ -51,6 +51,8 @@ public:
 public:
 	static const string SCHEME;
 	static const string PATH_PREFIX;
+	static const string UNSECURE_SCHEME;
+	static const string UNSECURE_PATH_PREFIX;
 
 protected:
 	// From AzureFilesystem

@@ -20,6 +20,8 @@
 namespace duckdb {
 const string AzureDfsStorageFileSystem::SCHEME = "abfss";
 const string AzureDfsStorageFileSystem::PATH_PREFIX = "abfss://";
+const string AzureDfsStorageFileSystem::UNSECURE_SCHEME = "abfs";
+const string AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX = "abfs://";
 
 inline static bool IsDfsScheme(const string &fpath) {
 	return fpath.rfind("abfss://", 0) == 0;
