@@ -5,26 +5,35 @@
 # Require statement will ensure this test is run with this extension loaded
 require azure
 
-require-env AZURE_TENANT_ID
-
-require-env AZURE_CLIENT_ID
-
-require-env AZURE_CLIENT_SECRET
-
+#require-env AZURE_TENANT_ID
+#
+#require-env AZURE_CLIENT_ID
+#
+#require-env AZURE_CLIENT_SECRET
+#
 require-env AZURE_STORAGE_ACCOUNT
+#
+#statement ok
+#set allow_persistent_secrets=false
+#
+#statement ok
+#CREATE SECRET spn (
+#    TYPE AZURE,
+#    PROVIDER SERVICE_PRINCIPAL,
+#    TENANT_ID '${AZURE_TENANT_ID}',
+#    CLIENT_ID '${AZURE_CLIENT_ID}',
+#    CLIENT_SECRET '${AZURE_CLIENT_SECRET}',
+#    ACCOUNT_NAME '${AZURE_STORAGE_ACCOUNT}'
+#);
+
 
 statement ok
-set allow_persistent_secrets=false
-
-statement ok
-CREATE SECRET spn (
+CREATE SECRET az1 (
     TYPE AZURE,
-    PROVIDER SERVICE_PRINCIPAL,
-    TENANT_ID '${AZURE_TENANT_ID}',
-    CLIENT_ID '${AZURE_CLIENT_ID}',
-    CLIENT_SECRET '${AZURE_CLIENT_SECRET}',
+    PROVIDER CREDENTIAL_CHAIN,
+    CHAIN 'cli',
     ACCOUNT_NAME '${AZURE_STORAGE_ACCOUNT}'
-);
+)
 
 # Check that with Azure ADLS GEN2 directories are not show in globs
 query I
@@ -99,6 +108,11 @@ SET azure_http_stats = true;
 
 query II
 EXPLAIN ANALYZE SELECT count(*) FROM 'abfss://testing-private/partitioned/l_receipmonth=*7/l_shipmode=TRUCK/*.csv';
+----
+analyzed_plan	<REGEX>:.*HTTP Stats.*in\: 322\.0 KiB.*\#HEAD\: 1.*GET\: 4.*PUT\: 0.*\#POST\: 0.*
+
+query II
+EXPLAIN ANALYZE SELECT count(*) FROM 'abfs://testing-private/partitioned/l_receipmonth=*7/l_shipmode=TRUCK/*.csv';
 ----
 analyzed_plan	<REGEX>:.*HTTP Stats.*in\: 322\.0 KiB.*\#HEAD\: 1.*GET\: 4.*PUT\: 0.*\#POST\: 0.*
 

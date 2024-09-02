@@ -13,7 +13,7 @@ AzureParsedUrl ParseUrl(const std::string &url) {
 	std::string container, storage_account_name, endpoint, prefix, path;
 
 	if (url.rfind("azure://", 0) != 0 && url.rfind("az://", 0) != 0 &&
-	    url.rfind(AzureDfsStorageFileSystem::PATH_PREFIX, 0) != 0) {
+	    url.rfind(AzureDfsStorageFileSystem::PATH_PREFIX, 0) != 0 && url.rfind(AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX, 0) != 0) {
 		throw IOException("URL needs to start with azure:// or az:// or %s or %s",
 			AzureDfsStorageFileSystem::PATH_PREFIX,
 			AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX);
