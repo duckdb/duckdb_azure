@@ -63,15 +63,33 @@ SELECT count(*) FROM 'abfss://testing-private/partitioned/l_receipmonth=1997/l_s
 ----
 1291
 
+# Check with absolute path using unsecure abfs
+query I
+SELECT count(*) FROM 'abfs://testing-private/partitioned/l_receipmonth=1997/l_shipmode=TRUCK/data_0.csv';
+----
+1291
+
 # Check fully qualified name
 query I
 SELECT count(*) FROM 'abfss://${AZURE_STORAGE_ACCOUNT}.dfs.core.windows.net/testing-private/partitioned/l_receipmonth=*/l_shipmode=TRUCK/*.csv';
 ----
 2317
 
+# Check fully qualified name using unsecure abfs
+query I
+SELECT count(*) FROM 'abfs://${AZURE_STORAGE_ACCOUNT}.dfs.core.windows.net/testing-private/partitioned/l_receipmonth=*/l_shipmode=TRUCK/*.csv';
+----
+2317
+
 # Check fully qualified name abfss alternative syntax
 query I
 SELECT count(*) FROM 'abfss://testing-private@${AZURE_STORAGE_ACCOUNT}.dfs.core.windows.net/partitioned/l_receipmonth=*/l_shipmode=TRUCK/*.csv';
+----
+2317
+
+# Check fully qualified name abfs alternative syntax
+query I
+SELECT count(*) FROM 'abfs://testing-private@${AZURE_STORAGE_ACCOUNT}.dfs.core.windows.net/partitioned/l_receipmonth=*/l_shipmode=TRUCK/*.csv';
 ----
 2317
 
