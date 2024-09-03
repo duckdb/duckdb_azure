@@ -36,6 +36,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromConfig(ClientContext &context
 		scope.push_back("azure://");
 		scope.push_back("az://");
 		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
+		scope.push_back(AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX);
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
@@ -61,6 +62,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromCredentialChain(ClientContext
 		scope.push_back("azure://");
 		scope.push_back("az://");
 		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
+		scope.push_back(AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX);
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
@@ -85,6 +87,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromServicePrincipal(ClientContex
 		scope.push_back("azure://");
 		scope.push_back("az://");
 		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
+		scope.push_back(AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX);
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
@@ -114,6 +117,7 @@ static unique_ptr<BaseSecret> CreateAzureSecretFromAccessToken(ClientContext &co
 		scope.push_back("azure://");
 		scope.push_back("az://");
 		scope.push_back(AzureDfsStorageFileSystem::PATH_PREFIX);
+		scope.push_back(AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX);
 	}
 
 	auto result = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);

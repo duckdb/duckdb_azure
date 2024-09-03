@@ -591,8 +591,8 @@ ConnectToDfsStorageAccount(optional_ptr<FileOpener> opener, const std::string &p
 
 	if (!azure_parsed_url.is_fully_qualified) {
 		throw InvalidInputException(
-		    "Cannot identified the storage account from path '%s'. To connect anonymously to a "
-		    "storage account easier a fully qualified path has to be provided or secret must be create.",
+		    "Cannot identify the storage account from path '%s'. To connect anonymously to a "
+		    "storage account easier a fully qualified path has to be provided or secret must be created.",
 		    path);
 	}
 

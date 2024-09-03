@@ -7,14 +7,16 @@ namespace duckdb {
 AzureParsedUrl ParseUrl(const std::string &url) {
 	constexpr auto invalid_url_format =
 	    "The URL %s does not match the expected formats: (azure|az)://<container>/[<path>] or the fully qualified one: "
-	    "(abfss|azure|az)://<storage account>.<endpoint>/<container>/[<path>] "
-		"or abfss://<container>@<storage account>.<endpoint>/[<path>]";
+	    "(abfs[s]|azure|az)://<storage account>.<endpoint>/<container>/[<path>] "
+		"or abfs[s]://<container>@<storage account>.<endpoint>/[<path>]";
 	bool is_fully_qualified;
 	std::string container, storage_account_name, endpoint, prefix, path;
 
 	if (url.rfind("azure://", 0) != 0 && url.rfind("az://", 0) != 0 &&
-	    url.rfind(AzureDfsStorageFileSystem::PATH_PREFIX, 0) != 0) {
-		throw IOException("URL needs to start with azure:// or az:// or %s", AzureDfsStorageFileSystem::PATH_PREFIX);
+	    url.rfind(AzureDfsStorageFileSystem::PATH_PREFIX, 0) != 0 && url.rfind(AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX, 0) != 0) {
+		throw IOException("URL needs to start with azure:// or az:// or %s or %s",
+			AzureDfsStorageFileSystem::PATH_PREFIX,
+			AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX);
 	}
 	const auto prefix_end_pos = url.find("//") + 2;
 
@@ -31,9 +33,12 @@ AzureParsedUrl ParseUrl(const std::string &url) {
 	if (dot_pos != std::string::npos && dot_pos < slash_pos) {
 		is_fully_qualified = true;
 
-		if (url.rfind(AzureDfsStorageFileSystem::PATH_PREFIX, 0) == 0 &&
+		if ((
+				url.rfind(AzureDfsStorageFileSystem::PATH_PREFIX, 0) == 0 ||
+				url.rfind(AzureDfsStorageFileSystem::UNSECURE_PATH_PREFIX, 0) == 0
+			) &&
 			at_pos != std::string::npos) {
-			// syntax is abfss://<container>@<storage account>.<endpoint>/[<path>]
+			// syntax is abfs[s]://<container>@<storage account>.<endpoint>/[<path>]
 			const auto path_slash_pos = url.find('/', prefix_end_pos + 1);
 			if (path_slash_pos == string::npos) {
 				throw IOException(invalid_url_format, url);
@@ -44,7 +49,7 @@ AzureParsedUrl ParseUrl(const std::string &url) {
 			endpoint = url.substr(dot_pos + 1, path_slash_pos - dot_pos - 1);
 			path = url.substr(path_slash_pos + 1);
 		} else {
-			// syntax is (abfss|azure|az)://<storage account>.<endpoint>/<container>/[<path>]
+			// syntax is (abfs[s]|azure|az)://<storage account>.<endpoint>/<container>/[<path>]
 			const auto container_slash_pos = url.find('/', dot_pos);
 			if (container_slash_pos == string::npos) {
 				throw IOException(invalid_url_format, url);
