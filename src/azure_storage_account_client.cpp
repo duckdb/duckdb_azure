@@ -22,6 +22,7 @@
 #include <azure/identity/default_azure_credential.hpp>
 #include <azure/identity/environment_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
+#include <azure/identity/workload_identity_credential.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/blobs/blob_service_client.hpp>
 
@@ -138,6 +139,8 @@ CreateChainedTokenCredential(const std::string &chain,
 	for (const auto &item : chain_list) {
 		if (item == "cli") {
 			sources.push_back(std::make_shared<Azure::Identity::AzureCliCredential>(credential_options));
+		} else if (item == "workload_identity") {
+			sources.push_back(std::make_shared<Azure::Identity::WorkloadIdentityCredential>(credential_options));
 		} else if (item == "managed_identity") {
 			sources.push_back(std::make_shared<Azure::Identity::ManagedIdentityCredential>(credential_options));
 		} else if (item == "env") {
