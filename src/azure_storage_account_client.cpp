@@ -559,11 +559,11 @@ static Azure::Storage::Blobs::BlobServiceClient GetBlobStorageAccountClient(opti
 }
 
 const SecretMatch LookupSecret(optional_ptr<FileOpener> opener, const std::string &path) {
-	auto context = opener->TryGetClientContext();
+	auto secret_manager = FileOpener::TryGetSecretManager(opener);
+	auto transaction = FileOpener::TryGetCatalogTransaction(opener);
 
-	if (context) {
-		auto transaction = CatalogTransaction::GetSystemCatalogTransaction(*context);
-		return context->db->config.secret_manager->LookupSecret(transaction, path, "azure");
+	if (secret_manager && transaction) {
+		return secret_manager->LookupSecret(*transaction, path, "azure");
 	}
 
 	return {};

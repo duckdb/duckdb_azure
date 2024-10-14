@@ -90,7 +90,9 @@ unique_ptr<AzureFileHandle> AzureBlobStorageFileSystem::CreateHandle(const strin
 
 	auto handle = make_uniq<AzureBlobStorageFileHandle>(*this, path, flags, storage_context->read_options,
 	                                                    std::move(blob_client));
-	handle->PostConstruct();
+	if (!handle->PostConstruct()) {
+		return nullptr;
+	}
 	return std::move(handle);
 }
 

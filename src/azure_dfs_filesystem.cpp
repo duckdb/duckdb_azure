@@ -108,7 +108,9 @@ unique_ptr<AzureFileHandle> AzureDfsStorageFileSystem::CreateHandle(const string
 
 	auto handle = make_uniq<AzureDfsStorageFileHandle>(*this, path, flags, storage_context->read_options,
 	                                                   file_system_client.GetFileClient(parsed_url.path));
-	handle->PostConstruct();
+	if (!handle->PostConstruct()) {
+		return nullptr;
+	}
 	return std::move(handle);
 }
 
