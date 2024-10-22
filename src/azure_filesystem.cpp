@@ -31,17 +31,25 @@ AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, string path, FileOp
 	if (flags.OpenForReading()) {
 		read_buffer = duckdb::unique_ptr<data_t[]>(new data_t[read_options.buffer_size]);
 	}
+	if (flags.RequireParallelAccess()) {
+		// use direct i/o if parallel access is required
+		flags |= FileOpenFlags(FileOpenFlags::FILE_FLAGS_DIRECT_IO);
+	}
 }
 
-void AzureFileHandle::PostConstruct() {
-	static_cast<AzureStorageFileSystem &>(file_system).LoadFileInfo(*this);
+bool AzureFileHandle::PostConstruct() {
+	return static_cast<AzureStorageFileSystem &>(file_system).LoadFileInfo(*this);
 }
 
-void AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
+bool AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
 	if (handle.flags.OpenForReading()) {
 		try {
 			LoadRemoteFileInfo(handle);
 		} catch (const Azure::Storage::StorageException &e) {
+			auto status_code = int(e.StatusCode);
+			if (status_code == 404 && handle.flags.ReturnNullIfNotExists()) {
+				return false;
+			}
 			throw IOException(
 			    "AzureBlobStorageFileSystem open file '%s' failed with code'%s', Reason Phrase: '%s', Message: '%s'",
 			    handle.path, e.ErrorCode, e.ReasonPhrase, e.Message);
@@ -52,6 +60,7 @@ void AzureStorageFileSystem::LoadFileInfo(AzureFileHandle &handle) {
 			    handle.path, e.what());
 		}
 	}
+	return true;
 }
 
 unique_ptr<FileHandle> AzureStorageFileSystem::OpenFile(const string &path, FileOpenFlags flags,
@@ -162,11 +171,10 @@ shared_ptr<AzureContextState> AzureStorageFileSystem::GetOrCreateStorageContext(
 	if (FileOpener::TryGetCurrentSetting(opener, "azure_context_caching", value)) {
 		azure_context_caching = value.GetValue<bool>();
 	}
+	auto client_context = FileOpener::TryGetClientContext(opener);
 
 	shared_ptr<AzureContextState> result;
-	if (azure_context_caching) {
-		auto client_context = FileOpener::TryGetClientContext(opener);
-
+	if (azure_context_caching && client_context) {
 		auto context_key = GetContextPrefix() + parsed_url.storage_account_name;
 
 		auto &registered_state = client_context->registered_state;

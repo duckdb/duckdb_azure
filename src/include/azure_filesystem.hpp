@@ -48,7 +48,7 @@ class AzureStorageFileSystem;
 
 class AzureFileHandle : public FileHandle {
 public:
-	virtual void PostConstruct();
+	virtual bool PostConstruct();
 	void Close() override {
 	}
 
@@ -56,7 +56,7 @@ protected:
 	AzureFileHandle(AzureStorageFileSystem &fs, string path, FileOpenFlags flags, const AzureReadOptions &read_options);
 
 public:
-	const FileOpenFlags flags;
+	FileOpenFlags flags;
 
 	// File info
 	idx_t length;
@@ -96,7 +96,7 @@ public:
 	void Seek(FileHandle &handle, idx_t location) override;
 	void FileSync(FileHandle &handle) override;
 
-	void LoadFileInfo(AzureFileHandle &handle);
+	bool LoadFileInfo(AzureFileHandle &handle);
 
 protected:
 	virtual duckdb::unique_ptr<AzureFileHandle> CreateHandle(const string &path, FileOpenFlags flags,
