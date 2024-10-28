@@ -28,12 +28,8 @@ AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, string path, FileOp
       buffer_available(0), buffer_idx(0), file_offset(0), buffer_start(0), buffer_end(0),
       // Options
       read_options(read_options) {
-	if (flags.OpenForReading()) {
+	if (!flags.RequireParallelAccess() && !flags.DirectIO()) {
 		read_buffer = duckdb::unique_ptr<data_t[]>(new data_t[read_options.buffer_size]);
-	}
-	if (flags.RequireParallelAccess()) {
-		// use direct i/o if parallel access is required
-		flags |= FileOpenFlags(FileOpenFlags::FILE_FLAGS_DIRECT_IO);
 	}
 }
 
@@ -102,7 +98,10 @@ void AzureStorageFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_b
 	idx_t buffer_offset = 0;
 
 	// Don't buffer when DirectIO is set.
-	if (hfh.flags.DirectIO() && to_read > 0) {
+	if (hfh.flags.DirectIO() || hfh.flags.RequireParallelAccess()) {
+		if (to_read == 0) {
+			return;
+		}
 		ReadRange(hfh, location, (char *)buffer, to_read);
 		hfh.buffer_available = 0;
 		hfh.buffer_idx = 0;
