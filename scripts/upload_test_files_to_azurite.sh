@@ -8,6 +8,9 @@ az storage container create -n testing-private --connection-string "${conn_strin
 az storage container create -n testing-public --connection-string "${conn_string}" --public-access blob
 az storage container create -n writes --connection-string "${conn_string}"
 
+# The connection-string shortcut uses Azurite's default port (10000).
+az storage container create -n writes --connection-string "UseDevelopmentStorage=true" || exit 1
+
 copy_file() {
   local from="${1}"
   local to="${2}"

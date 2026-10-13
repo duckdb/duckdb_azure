@@ -47,6 +47,7 @@ jobs:
       - name: Launch & populate Azure test service
         run: |
           azurite --skipApiVersionCheck --blobPort 28000 --queuePort 28001 --tablePort 28002 > azurite_log.txt 2>&1 &
+          azurite --skipApiVersionCheck --location "$RUNNER_TEMP/azurite-default" > azurite_default_log.txt 2>&1 &
           sudo ./scripts/run_squid.sh --port 3128 --log_dir squid_logs &
           sudo ./scripts/run_squid.sh --port 3129 --log_dir squid_auth_logs --auth &
           sleep 10
@@ -90,6 +91,9 @@ jobs:
           echo "## azurite"
           cat azurite_log.txt
 
+          echo "## default-port azurite"
+          cat azurite_default_log.txt
+
           echo "## squid"
           sudo cat squid_logs/*
 
@@ -125,6 +129,7 @@ jobs:
         run: |
           npm install -g azurite
           azurite --skipApiVersionCheck --blobPort 28000 --queuePort 28001 --tablePort 28002 > azurite_log.txt 2>&1 &
+          azurite --skipApiVersionCheck --location "$RUNNER_TEMP/azurite-default" > azurite_default_log.txt 2>&1 &
           sleep 10
           ./scripts/upload_test_files_to_azurite.sh
 
@@ -161,6 +166,9 @@ jobs:
           echo "## azurite"
           cat azurite_log.txt
 
+          echo "## default-port azurite"
+          cat azurite_default_log.txt
+
   azurite-tests-windows:
     name: Azurite tests (Windows)
     runs-on: ${{ github.repository_owner == 'duckdb' && 'namespace-profile-windows-x64' || 'windows-latest' }}
@@ -190,6 +198,7 @@ jobs:
         run: |
           npm install -g azurite
           azurite --skipApiVersionCheck --blobPort 28000 --queuePort 28001 --tablePort 28002 > azurite_log.txt 2>&1 &
+          azurite --skipApiVersionCheck --location "$RUNNER_TEMP/azurite-default" > azurite_default_log.txt 2>&1 &
           sleep 10
           ./scripts/upload_test_files_to_azurite.sh
 
@@ -235,3 +244,4 @@ jobs:
         shell: bash
         run: |
           cat azurite_log.txt
+          cat azurite_default_log.txt
