@@ -4,6 +4,7 @@
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/logging/file_system_logger.hpp"
+#include "duckdb/logging/log_manager.hpp"
 #include "duckdb/main/client_context.hpp"
 
 #include <azure/storage/common/storage_exception.hpp>
@@ -38,13 +39,27 @@ AzureFileHandle::AzureFileHandle(AzureStorageFileSystem &fs, const OpenFileInfo 
 
 	// Set metadata of file when available, it avoids to invoke to the storage to get them.
 	if (info.extended_info) {
-		auto entry1 = info.extended_info->options.find("file_size");
-		if (entry1 != info.extended_info->options.end()) {
+		auto &opts = info.extended_info->options;
+		auto entry1 = opts.find("file_size");
+		if (entry1 != opts.end()) {
 			length = entry1->second.GetValue<uint64_t>();
 		}
-		auto entry2 = info.extended_info->options.find("last_modified");
-		if (entry2 != info.extended_info->options.end()) {
+		auto entry2 = opts.find("last_modified");
+		if (entry2 != opts.end()) {
 			last_modified = entry2->second.GetValue<timestamp_t>();
+		}
+		auto entry3 = opts.find("etag");
+		if (entry3 != opts.end()) {
+			etag = StringValue::Get(entry3->second);
+		}
+		// When glob supplied the full metadata triplet for a read, skip the HEAD (GetProperties) on open.
+		// Exclude trailing-slash paths: those follow the S3/Azure "foo/" dir-marker convention and must
+		// still be resolved to FILE_TYPE_DIR by LoadRemoteFileInfo rather than pre-typed as a regular file.
+		const bool have_all = entry1 != opts.end() && entry2 != opts.end() && entry3 != opts.end();
+		const bool looks_like_dir = !info.path.empty() && info.path.back() == '/';
+		if (have_all && !looks_like_dir && flags.OpenForReading() && !flags.OpenForWriting()) {
+			file_type = FileType::FILE_TYPE_REGULAR;
+			is_remote_loaded = true;
 		}
 	}
 }
@@ -99,6 +114,11 @@ int64_t AzureStorageFileSystem::GetFileSize(FileHandle &handle) {
 timestamp_t AzureStorageFileSystem::GetLastModifiedTime(FileHandle &handle) {
 	auto &afh = handle.Cast<AzureFileHandle>();
 	return afh.last_modified;
+}
+
+string AzureStorageFileSystem::GetVersionTag(FileHandle &handle) {
+	auto &afh = handle.Cast<AzureFileHandle>();
+	return afh.etag;
 }
 
 void AzureStorageFileSystem::Seek(FileHandle &handle, idx_t location) {
@@ -295,6 +315,13 @@ timestamp_t AzureStorageFileSystem::ToTimestamp(const Azure::DateTime &dt) {
 	auto time_point = static_cast<std::chrono::system_clock::time_point>(dt);
 	auto micros = std::chrono::duration_cast<std::chrono::microseconds>(time_point.time_since_epoch()).count();
 	return timestamp_t(micros);
+}
+
+string AzureStorageFileSystem::StripETagQuotes(string etag) {
+	if (etag.size() >= 2 && etag.front() == '"' && etag.back() == '"') {
+		return etag.substr(1, etag.size() - 2);
+	}
+	return etag;
 }
 
 } // namespace duckdb

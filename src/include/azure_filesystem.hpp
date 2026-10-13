@@ -79,6 +79,7 @@ public:
 	FileType file_type;
 	idx_t length;
 	timestamp_t last_modified;
+	string etag;
 
 	// Read buffer
 	duckdb::unique_ptr<data_t[]> read_buffer;
@@ -111,6 +112,7 @@ public:
 	}
 	int64_t GetFileSize(FileHandle &handle) override;
 	timestamp_t GetLastModifiedTime(FileHandle &handle) override;
+	string GetVersionTag(FileHandle &handle) override;
 	void Seek(FileHandle &handle, idx_t location) override;
 	idx_t SeekPosition(FileHandle &handle) override;
 
@@ -143,6 +145,7 @@ protected:
 
 public:
 	static timestamp_t ToTimestamp(const Azure::DateTime &dt);
+	static string StripETagQuotes(string etag);
 };
 
 } // namespace duckdb

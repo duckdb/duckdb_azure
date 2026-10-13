@@ -24,7 +24,7 @@ static void CopySecret(const std::string &key, const CreateSecretInput &input, K
 	auto val = input.options.find(key);
 
 	if (val != input.options.end()) {
-		result.secret_map[key] = val->second;
+		result.secret_map[Identifier(key)] = val->second;
 	}
 }
 
@@ -182,7 +182,7 @@ void CreateAzureSecretFunctions::Register(ExtensionLoader &loader) {
 
 	// Register the new type
 	SecretType secret_type;
-	secret_type.name = type;
+	secret_type.name = Identifier(type);
 	secret_type.deserializer = KeyValueSecret::Deserialize<KeyValueSecret>;
 	secret_type.default_provider = "config";
 	loader.RegisterSecretType(secret_type);

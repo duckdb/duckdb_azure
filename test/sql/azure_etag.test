@@ -1,0 +1,40 @@
+# name: test/sql/azure_etag.test
+# description: ETag prefill from glob listings avoids the redundant GetProperties (HEAD) on open
+# group: [sql]
+
+require azure
+
+require parquet
+
+require-env AZURE_STORAGE_CONNECTION_STRING
+
+statement ok
+SET azure_storage_connection_string = '{AZURE_STORAGE_CONNECTION_STRING}';
+
+statement ok
+SET azure_http_stats = true;
+
+# -----------------------------------------------------------------------------
+# Baseline: explicit (non-wildcard) path
+#
+# A non-wildcard path resolves via FileExists + a per-open GetProperties, so the
+# read issues one or more HEAD requests. This is the pre-existing behavior and is
+# unaffected by the ETag work -- it establishes that HEADs do occur here.
+
+query II
+EXPLAIN ANALYZE SELECT sum(l_orderkey) FROM 'az://testing-private/l.parquet';
+----
+analyzed_plan	<REGEX>:.*Azure HTTP Stats.*\#HEAD\: [1-9].*
+
+# -----------------------------------------------------------------------------
+# ETag prefill: glob (wildcard) path skips the HEAD
+#
+# A wildcard path is resolved by listing (ListBlobs / ListPaths), which now
+# carries file_size + last_modified + etag into each match's extended_info. On a
+# read-only open the handle is pre-loaded from that metadata, so no GetProperties
+# (HEAD) is needed -- the only remote calls are the listing and the data GETs.
+
+query II
+EXPLAIN ANALYZE SELECT sum(l_orderkey) FROM 'az://testing-private/l*.parquet';
+----
+analyzed_plan	<REGEX>:.*Azure HTTP Stats.*\#HEAD\: 0.*GET.*

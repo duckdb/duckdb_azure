@@ -10,6 +10,7 @@
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/function/scalar/string_common.hpp"
 #include "duckdb/logging/file_system_logger.hpp"
+#include "duckdb/logging/log_manager.hpp"
 
 #include <algorithm>
 #include <azure/storage/blobs/blob_options.hpp>
@@ -75,6 +76,10 @@ static void Walk(const Azure::Storage::Files::DataLake::DataLakeFileSystemClient
 					options.emplace("file_size", Value::BIGINT(elt.FileSize));
 					options.emplace("last_modified",
 					                Value::TIMESTAMP(AzureStorageFileSystem::ToTimestamp(elt.LastModified)));
+					auto etag = AzureStorageFileSystem::StripETagQuotes(elt.ETag);
+					if (!etag.empty()) {
+						options.emplace("etag", Value(std::move(etag)));
+					}
 					out_result->push_back(info);
 				}
 			}
@@ -296,6 +301,12 @@ bool AzureDfsStorageFileSystem::ListFilesExtended(const string &path_in,
 			options.emplace("type", std::move(file_type));
 			options.emplace("file_size", Value::BIGINT(UnsafeNumericCast<int64_t>(child.FileSize)));
 			options.emplace("last_modified", Value::TIMESTAMP(ToTimestamp(child.LastModified)));
+			if (!child.IsDirectory) {
+				auto etag = StripETagQuotes(child.ETag);
+				if (!etag.empty()) {
+					options.emplace("etag", Value(std::move(etag)));
+				}
+			}
 
 			// NOTE: there's a LOT of metadata available, and tags, etc. -- see
 			// https://github.com/Azure/azure-sdk-for-cpp/blob/main/sdk/storage/azure-storage-blobs/inc/azure/storage/blobs/rest_client.hpp#L1134
@@ -321,17 +332,18 @@ void AzureDfsStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 	// - doesn't exist, must be created (file; dir create doesn't happen here)
 	// - doesn't exist, don't create
 
-	auto set_props = [&](bool is_dir, idx_t length, timestamp_t last_mod) {
+	auto set_props = [&](bool is_dir, idx_t length, timestamp_t last_mod, const string &etag) {
 		afh.is_remote_loaded = true; // always set loaded
 		afh.file_type = is_dir ? FileType::FILE_TYPE_DIR : FileType::FILE_TYPE_REGULAR;
 		afh.length = is_dir ? 0 : length;
 		afh.last_modified = last_mod;
+		afh.etag = StripETagQuotes(etag);
 		afh.file_offset = 0; // always reset offset state
 	};
 
 	auto create_file = [&]() {
 		auto res_create = afh.file_client.Create();
-		set_props(false, 0, ToTimestamp(res_create.Value.LastModified));
+		set_props(false, 0, ToTimestamp(res_create.Value.LastModified), res_create.Value.ETag.ToString());
 	};
 	auto truncate_file = create_file;
 
@@ -345,7 +357,8 @@ void AzureDfsStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 		}
 		// NOTE: honor convention for S3/Azure "foo/" empty file -> "foo" dir marker
 		auto is_dir = StringUtil::EndsWith(afh.GetPath(), "/") || res_props.Value.IsDirectory;
-		return set_props(is_dir, res_props.Value.FileSize, ToTimestamp(res_props.Value.LastModified));
+		return set_props(is_dir, res_props.Value.FileSize, ToTimestamp(res_props.Value.LastModified),
+		                 res_props.Value.ETag.ToString());
 	} catch (const Azure::Storage::StorageException &e) {
 		if (int(e.StatusCode) == 404 && afh.flags.OpenForWriting() &&
 		    (afh.flags.OverwriteExistingFile() || afh.flags.CreateFileIfNotExists())) {

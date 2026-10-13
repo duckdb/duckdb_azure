@@ -11,6 +11,7 @@
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/function/scalar/string_common.hpp"
 #include "duckdb/logging/file_system_logger.hpp"
+#include "duckdb/logging/log_manager.hpp"
 #include "duckdb/main/client_data.hpp"
 #include "include/azure_blob_filesystem.hpp"
 
@@ -208,6 +209,10 @@ vector<OpenFileInfo> AzureBlobStorageFileSystem::Glob(const string &path, FileOp
 				auto &options = info.extended_info->options;
 				options.emplace("file_size", Value::BIGINT(key.BlobSize));
 				options.emplace("last_modified", Value::TIMESTAMP(ToTimestamp(key.Details.LastModified)));
+				auto etag = StripETagQuotes(key.Details.ETag.ToString());
+				if (!etag.empty()) {
+					options.emplace("etag", Value(std::move(etag)));
+				}
 				result.push_back(info);
 			}
 		}
@@ -261,6 +266,10 @@ bool AzureBlobStorageFileSystem::ListFilesExtended(const string &path_in,
 				options.emplace("type", Value("file"));
 				options.emplace("file_size", Value::BIGINT(blob.BlobSize));
 				options.emplace("last_modified", Value::TIMESTAMP(ToTimestamp(blob.Details.LastModified)));
+				auto etag = StripETagQuotes(blob.Details.ETag.ToString());
+				if (!etag.empty()) {
+					options.emplace("etag", Value(std::move(etag)));
+				}
 				callback(info);
 			} else {
 				// chop off slash + tail, take the remainder and treat as directory, caching it in seen to avoid repeat.
@@ -295,17 +304,18 @@ void AzureBlobStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 	// - doesn't exist, must be created (file; dir create doesn't happen here)
 	// - doesn't exist, don't create
 
-	auto set_props = [&](bool is_dir, idx_t length, timestamp_t last_mod) {
+	auto set_props = [&](bool is_dir, idx_t length, timestamp_t last_mod, const string &etag) {
 		afh.is_remote_loaded = true; // always set loaded
 		afh.file_type = is_dir ? FileType::FILE_TYPE_DIR : FileType::FILE_TYPE_REGULAR;
 		afh.length = is_dir ? 0 : length;
 		afh.last_modified = last_mod;
+		afh.etag = StripETagQuotes(etag);
 		afh.file_offset = 0; // always reset offset state
 	};
 
 	auto create_file = [&]() {
 		auto res_create = afh.blob_client.CommitBlockList({});
-		set_props(false, 0, ToTimestamp(res_create.Value.LastModified));
+		set_props(false, 0, ToTimestamp(res_create.Value.LastModified), res_create.Value.ETag.ToString());
 	};
 	auto truncate_file = create_file;
 
@@ -328,7 +338,8 @@ void AzureBlobStorageFileSystem::LoadRemoteFileInfo(AzureFileHandle &handle) {
 			auto ite = res_props.Value.Metadata.find("hdi_isFolder"); // NOTE: Metadata is case-insensitive
 			is_dir |= (ite != res_props.Value.Metadata.end() && ite->second == "true");
 		}
-		return set_props(is_dir, res_props.Value.BlobSize, ToTimestamp(res_props.Value.LastModified));
+		return set_props(is_dir, res_props.Value.BlobSize, ToTimestamp(res_props.Value.LastModified),
+		                 res_props.Value.ETag.ToString());
 	} catch (const Azure::Storage::StorageException &e) {
 		if (int(e.StatusCode) == 404 && afh.flags.OpenForWriting() &&
 		    (afh.flags.OverwriteExistingFile() || afh.flags.CreateFileIfNotExists())) {
