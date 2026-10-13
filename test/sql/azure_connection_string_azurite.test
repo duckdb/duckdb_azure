@@ -10,6 +10,8 @@ require-env AZURE_STORAGE_CONNECTION_STRING
 
 require-env AZ_TEMP_DIR
 
+test-env AZURITE_SHORTCUT_PROXY direct
+
 # These fixtures use Azurite's public test key, never a production credential.
 # Explicit endpoints override the default protocol and sovereign-cloud suffix.
 foreach connection_string AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:28000/devstoreaccount1;DfsEndpoint=http://127.0.0.1:28000/devstoreaccount1 DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:28000/devstoreaccount1;DfsEndpoint=http://127.0.0.1:28000/devstoreaccount1;EndpointSuffix=core.chinacloudapi.cn defaultendpointsprotocol=HTTPS;blobendpoint=http://127.0.0.1:28000/devstoreaccount1;dfsendpoint=http://127.0.0.1:28000/devstoreaccount1;accountkey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;accountname=devstoreaccount1;EndpointSuffix=core.usgovcloudapi.net;FileEndpoint=https://devstoreaccount1.file.core.windows.net;QueueEndpoint=http://127.0.0.1:28001/devstoreaccount1;TableEndpoint=http://127.0.0.1:28002/devstoreaccount1;
@@ -228,6 +230,9 @@ statement ok
 DROP SECRET connection_string_test;
 
 statement ok
+SET azure_http_proxy = CASE WHEN '{AZURITE_SHORTCUT_PROXY}' = 'direct' THEN '' ELSE '{AZURITE_SHORTCUT_PROXY}' END;
+
+statement ok
 SET azure_storage_connection_string = '{connection_string}';
 
 foreach prefix az:// azure://
@@ -248,3 +253,6 @@ endloop
 
 statement ok
 SET azure_storage_connection_string = '';
+
+statement ok
+SET azure_http_proxy = '';
