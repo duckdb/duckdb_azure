@@ -82,8 +82,8 @@ jobs:
         env:
           HTTP_PROXY: "http://127.0.0.1:3128"
           NO_PROXY: ""
-          no_proxy: ""
         run: |
+          unset no_proxy
           scripts/env_azurite make test
 
       - name: Run test data integrity check
