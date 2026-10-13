@@ -58,8 +58,8 @@ static void ValidateConnectionStringEndpoint(const Azure::Core::Url &url, const 
 	}
 }
 
-static Azure::Storage::_internal::ConnectionStringParts
-ParseAzureConnectionString(const std::string &connection_string, bool is_dfs = false) {
+static Azure::Storage::_internal::ConnectionStringParts ParseAzureConnectionString(const std::string &connection_string,
+                                                                                   bool is_dfs = false) {
 	std::string normalized;
 	std::string development_proxy;
 	std::unordered_set<std::string> settings;
@@ -125,7 +125,8 @@ ParseAzureConnectionString(const std::string &connection_string, bool is_dfs = f
 		    "Invalid Azure connection string: DevelopmentStorageProxyUri requires UseDevelopmentStorage=true.");
 	}
 	if (has_account_key && !has_account_name) {
-		throw InvalidInputException("Invalid Azure connection string: AccountName is required when AccountKey is provided.");
+		throw InvalidInputException(
+		    "Invalid Azure connection string: AccountName is required when AccountKey is provided.");
 	}
 
 	try {
@@ -160,9 +161,9 @@ ParseAzureConnectionString(const std::string &connection_string, bool is_dfs = f
 }
 
 static bool ConnectionStringMatchesStorageAccount(const Azure::Storage::_internal::ConnectionStringParts &parsed,
-                                                 const Azure::Core::Url &service_url,
-                                                 const std::string &provided_storage_account,
-                                                 const std::string &provided_endpoint) {
+                                                  const Azure::Core::Url &service_url,
+                                                  const std::string &provided_storage_account,
+                                                  const std::string &provided_endpoint) {
 	if (provided_storage_account.empty()) {
 		return true;
 	}
@@ -181,7 +182,7 @@ static bool ConnectionStringMatchesStorageAccount(const Azure::Storage::_interna
 
 template <typename CLIENT, typename OPTIONS>
 static CLIENT CreateClientFromConnectionString(const Azure::Storage::_internal::ConnectionStringParts &parsed,
-                                              const Azure::Core::Url &service_url, const OPTIONS &options) {
+                                               const Azure::Core::Url &service_url, const OPTIONS &options) {
 	if (parsed.KeyCredential) {
 		return CLIENT(service_url.GetAbsoluteUrl(), parsed.KeyCredential, options);
 	}
@@ -549,15 +550,15 @@ GetBlobStorageAccountClientFromConfigProvider(optional_ptr<FileOpener> opener, c
 	if (!connection_string_val.IsNull()) {
 		auto parsed = ParseAzureConnectionString(connection_string_val.ToString());
 		if (azure_parsed_url.is_fully_qualified &&
-		    !ConnectionStringMatchesStorageAccount(parsed, parsed.BlobServiceUrl,
-		                                           azure_parsed_url.storage_account_name, azure_parsed_url.endpoint)) {
+		    !ConnectionStringMatchesStorageAccount(parsed, parsed.BlobServiceUrl, azure_parsed_url.storage_account_name,
+		                                           azure_parsed_url.endpoint)) {
 			throw InvalidInputException("The provided connection string does not match the storage account named %s",
 			                            azure_parsed_url.storage_account_name);
 		}
 
 		auto blob_options = ToBlobClientOptions(transport_options, opener);
 		return CreateClientFromConnectionString<Azure::Storage::Blobs::BlobServiceClient>(parsed, parsed.BlobServiceUrl,
-		                                                                                blob_options);
+		                                                                                  blob_options);
 	}
 
 	// Default provider (config) with no connection string => public storage account
@@ -794,7 +795,7 @@ static Azure::Storage::Blobs::BlobServiceClient GetBlobStorageAccountClient(opti
 	if (!connection_string.empty()) {
 		auto parsed = ParseAzureConnectionString(connection_string);
 		if (ConnectionStringMatchesStorageAccount(parsed, parsed.BlobServiceUrl, provided_storage_account,
-		                                         provided_endpoint)) {
+		                                          provided_endpoint)) {
 			return CreateClientFromConnectionString<Azure::Storage::Blobs::BlobServiceClient>(
 			    parsed, parsed.BlobServiceUrl, blob_options);
 		}

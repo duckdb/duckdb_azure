@@ -18,7 +18,8 @@ env:
 jobs:
   azurite-tests-linux:
     name: Azurite tests (Linux)
-    runs-on: ${{ github.repository_owner == 'duckdb' && 'namespace-profile-linux-x64' || 'ubuntu-latest' }}
+    # Namespace runners reserve port 10000, which the development-storage shortcut requires.
+    runs-on: ubuntu-latest
     env:
       VCPKG_TARGET_TRIPLET: x64-linux
       VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
